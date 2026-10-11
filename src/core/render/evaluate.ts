@@ -55,6 +55,12 @@ export interface ImageItem extends ItemBase {
 export interface VideoItem extends ItemBase {
   kind: 'video';
   mediaId: Id;
+  /**
+   * Unique per on-screen instance: the layer id prefixed by the chain of
+   * precomp layer ids it is nested in (a precomp used twice shows the same
+   * video layer at two different source times).
+   */
+  key: string;
   /** Seconds into the source media. */
   sourceTime: number;
 }
@@ -158,6 +164,7 @@ export function evaluateLayer(
   t: number,
   ctx: EvalContext,
   depth = 0,
+  prefix = '',
 ): RenderItem | null {
   const lt = t - layer.startTime;
   const opacity = Math.min(1, Math.max(0, num(layer, 'transform.opacity', lt, 100) / 100));
@@ -204,12 +211,12 @@ export function evaluateLayer(
     case 'video': {
       const m = project.media[layer.mediaId];
       if (!m) return null;
-      return { ...base, kind: 'video', mediaId: m.id, sourceTime: lt, rect: [0, 0, m.width, m.height] };
+      return { ...base, kind: 'video', mediaId: m.id, key: prefix + layer.id, sourceTime: lt, rect: [0, 0, m.width, m.height] };
     }
     case 'precomp': {
       const max = ctx.maxDepth ?? 16;
       if (depth >= max) return null;
-      const frame = evaluateComposition(project, layer.compId, lt, ctx, depth + 1);
+      const frame = evaluateComposition(project, layer.compId, lt, ctx, depth + 1, `${prefix}${layer.id}/`);
       if (!frame) return null;
       return { ...base, kind: 'precomp', frame, rect: [0, 0, frame.width, frame.height] };
     }
@@ -230,6 +237,7 @@ export function evaluateComposition(
   t: number,
   ctx: EvalContext,
   depth = 0,
+  prefix = '',
 ): CompFrame | null {
   const comp = project.compositions[compId];
   if (!comp) return null;
@@ -237,7 +245,7 @@ export function evaluateComposition(
   const layers = visibleLayers(comp, t);
   // Bottom of the stack draws first.
   for (let i = layers.length - 1; i >= 0; i--) {
-    const item = evaluateLayer(project, comp, layers[i], t, ctx, depth);
+    const item = evaluateLayer(project, comp, layers[i], t, ctx, depth, prefix);
     if (item && item.opacity > 0) items.push(item);
   }
   return { compId, width: comp.width, height: comp.height, background: comp.background, time: t, items };
@@ -274,6 +282,15 @@ export function referencedMedia(project: Project, compId: Id, out = new Set<Id>(
   for (const l of comp.layers) {
     if (l.type === 'image' || l.type === 'video' || l.type === 'audio') out.add(l.mediaId);
     else if (l.type === 'precomp') referencedMedia(project, l.compId, out, seen);
+  }
+  return out;
+}
+
+/** Every video item in a frame tree (for driving decoders). */
+export function collectVideoItems(frame: CompFrame, out: VideoItem[] = []): VideoItem[] {
+  for (const it of frame.items) {
+    if (it.kind === 'video') out.push(it);
+    else if (it.kind === 'precomp') collectVideoItems(it.frame, out);
   }
   return out;
 }

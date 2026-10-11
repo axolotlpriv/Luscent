@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "description": "Luscent — a browser-based motion editor for fast, punchy short-form edits.",
   "type": "module",
-  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

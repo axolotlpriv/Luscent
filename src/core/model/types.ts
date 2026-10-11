@@ -69,7 +69,7 @@ export type LayerType =
   | 'precomp'
   | 'null';
 
-export type BlendMode = 'normal' | 'add' | 'screen' | 'multiply' | 'lighten' | 'darken';
+export type BlendMode = 'normal' | 'add' | 'screen' | 'multiply' | 'lighten';
 
 /** Property paths are "group.name", e.g. "transform.position". */
 export type PropPath = string;
@@ -189,6 +189,8 @@ export interface AudioAnalysis {
   beats: number[];
   /** Detected transient (onset) times in source seconds. */
   onsets: number[];
+  /** 0..1 — how clearly periodic the rhythm is (low for rubato / ambient). */
+  confidence: number;
 }
 
 export interface MediaItem {

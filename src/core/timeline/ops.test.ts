@@ -215,10 +215,25 @@ describe('snapping', () => {
     const comp = project.compositions[project.mainCompId];
     project.media.m = {
       id: 'm', name: 'song', kind: 'audio', mimeType: 'audio/mp3', size: 1, width: 0, height: 0,
-      duration: 10, fps: 0, hasAudio: true, analysis: { bpm: 120, beats: [0, 0.5, 1, 1.5], onsets: [] },
+      duration: 10, fps: 0, hasAudio: true, analysis: { bpm: 120, beats: [0, 0.5, 1, 1.5], onsets: [], confidence: 1 },
     };
     comp.layers = [{ ...createSolidLayer({ comp }), type: 'audio', mediaId: 'm', inPoint: 2.2, outPoint: 4, startTime: 2 } as unknown as Layer];
     const targets = collectSnapTargets(project, comp, { beats: true, layers: false, markers: false });
     expect(targets.filter((t) => t.kind === 'beat').map((t) => t.time)).toEqual([2.5, 3, 3.5]);
+  });
+});
+
+describe('ops inside immer', () => {
+  it('splits and duplicates on drafts', async () => {
+    const { produce } = await import('immer');
+    const comp = seq();
+    const next = produce(comp, (d) => {
+      splitLayers(d as Composition, [d.layers[1].id], 2);
+      duplicateLayers(d as Composition, [d.layers[0].id]);
+      extractRange(d as Composition, 0.2, 0.4);
+    });
+    // 3 + split (1) + duplicate (1) + extract splits A around the range (1).
+    expect(next.layers.length).toBe(6);
+    expect(comp.layers.length).toBe(3);
   });
 });

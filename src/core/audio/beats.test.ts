@@ -40,6 +40,19 @@ describe('beat detection', () => {
   it('handles silence', () => {
     const a = analyzeAudio(new Float32Array(22050), 22050);
     expect(a.onsets).toEqual([]);
+    expect(a.bpm).toBe(0);
+  });
+
+  it('reports no beat grid for a steady tone', () => {
+    const sr = 22050;
+    const tone = new Float32Array(sr * 5).map((_, i) => Math.sin((2 * Math.PI * 440 * i) / sr) * 0.5);
+    const a = analyzeAudio(tone, sr);
+    expect(a.beats).toEqual([]);
+    expect(a.bpm).toBe(0);
+  });
+
+  it('is confident about a click track', () => {
+    expect(analyzeAudio(clickTrack(120, 8, 22050), 22050).confidence).toBeGreaterThan(0.7);
   });
 });
 

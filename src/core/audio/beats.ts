@@ -19,6 +19,8 @@ export interface OnsetEnvelope {
   /** Seconds offset of frame 0. */
   offset: number;
   env: Float32Array;
+  /** Std-dev of the raw (detrended) flux: how much rhythmic energy exists at all. */
+  strength: number;
 }
 
 function nextPow2(n: number): number {
@@ -87,9 +89,9 @@ export function onsetEnvelope(mono: Float32Array, sampleRate: number): OnsetEnve
   mean /= Math.max(1, frames);
   let varr = 0;
   for (const v of out) varr += (v - mean) * (v - mean);
-  const std = Math.sqrt(varr / Math.max(1, frames)) || 1;
-  for (let i = 0; i < frames; i++) out[i] /= std;
-  return { rate: sampleRate / hop, offset: size / 2 / sampleRate, env: out };
+  const std = Math.sqrt(varr / Math.max(1, frames));
+  for (let i = 0; i < frames; i++) out[i] /= std || 1;
+  return { rate: sampleRate / hop, offset: size / 2 / sampleRate, env: out, strength: std };
 }
 
 export function pickOnsets(o: OnsetEnvelope, threshold = 1.5, minGap = 0.06): number[] {
@@ -207,12 +209,31 @@ export function trackBeats(o: OnsetEnvelope, period: number, tightness = 100): n
   return beats;
 }
 
+/** Below this raw flux strength there are no real transients (silence, pads, tones). */
+const MIN_STRENGTH = 1.5;
+
+/** How strongly the envelope repeats at the chosen period (0..1). */
+export function periodicity(o: OnsetEnvelope, period: number): number {
+  const e = o.env;
+  const n = e.length;
+  const lag = Math.round(period);
+  if (n <= lag + 1) return 0;
+  let a0 = 0;
+  for (let i = 0; i < n; i++) a0 += e[i] * e[i];
+  a0 /= n;
+  let a = 0;
+  for (let i = lag; i < n; i++) a += e[i] * e[i - lag];
+  a /= n - lag;
+  return a0 > 0 ? Math.min(1, Math.max(0, (a / a0 - 0.2) / 0.6)) : 0;
+}
+
 export function analyzeAudio(mono: Float32Array, sampleRate: number): AudioAnalysis {
+  const empty: AudioAnalysis = { bpm: 0, beats: [], onsets: [], confidence: 0 };
   const o = onsetEnvelope(mono, sampleRate);
-  if (o.env.length < 8) return { bpm: 0, beats: [], onsets: [] };
+  if (o.env.length < 8 || o.strength < MIN_STRENGTH) return empty;
   const period = estimatePeriod(o);
   const bpm = (60 * o.rate) / period;
   const beats = trackBeats(o, period);
   const onsets = pickOnsets(o);
-  return { bpm: Math.round(bpm * 10) / 10, beats, onsets };
+  return { bpm: Math.round(bpm * 10) / 10, beats, onsets, confidence: Math.round(periodicity(o, period) * 100) / 100 };
 }

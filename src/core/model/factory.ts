@@ -228,9 +228,23 @@ export function createPrecompLayer(opts: BaseOpts & { target: Composition }): Pr
   };
 }
 
+/**
+ * Deep copy of plain data. Unlike structuredClone this also works on immer
+ * drafts (proxies), so ops can clone layers mid-edit.
+ */
+export function deepClone<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(deepClone) as T;
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v)) out[k] = deepClone((v as Record<string, unknown>)[k]);
+    return out as T;
+  }
+  return v;
+}
+
 /** Deep-clone a layer giving it (and its keyframes) fresh ids. */
 export function cloneLayer<L extends Layer>(layer: L, nameSuffix = ''): L {
-  const copy = structuredClone(layer) as L;
+  const copy = deepClone(layer);
   copy.id = uid('lyr_');
   copy.name = layer.name + nameSuffix;
   for (const prop of Object.values(copy.props)) {
