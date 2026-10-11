@@ -87,6 +87,7 @@ button.m-export {
   touch-action: none;
 }
 .m-stage .viewer-bar {
+  display: none; /* preview options live in the ⋯ menu on phones */
   height: 40px;
   overflow-x: auto;
   scrollbar-width: none;
@@ -181,7 +182,7 @@ button.m-export {
 }
 .compact .tl-cell-left .layer-index,
 .compact .tl-cell-left > .hint,
-.compact .tl-cell-left .switch:not(.eye) {
+.compact .tl-cell-left .switch {
   display: none;
 }
 .compact .tl-cell-left .twirl {
@@ -192,16 +193,10 @@ button.m-export {
   font-size: 14px;
   flex-shrink: 0;
 }
-.compact .tl-cell-left .switch.eye {
-  width: 30px;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  font-size: 17px;
-  flex-shrink: 0;
-}
+
 .compact .tl-cell-left .layer-name {
   font-size: 13px;
+  font-weight: 600;
 }
 .compact .tl-row.prop .tl-cell-left {
   padding-left: 14px;
@@ -223,31 +218,52 @@ button.m-export {
   overscroll-behavior: contain;
 }
 .compact .bar {
-  top: 3px;
-  bottom: 3px;
-  border-radius: 7px;
-  touch-action: none;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 8px;
+  touch-action: pan-y; /* unselected clips scroll the timeline; tap selects */
+}
+.compact .bar.selected {
+  touch-action: none; /* selected clip: drag moves it */
+  box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px #000, 0 4px 14px #0009;
+  z-index: 2;
 }
 .compact .bar .bar-name {
   font-size: 12px;
 }
-.compact .bar .handle {
-  width: 18px;
-}
-.compact .bar .handle::after {
-  content: '';
+/* trim grips on the selected clip */
+.grip {
   position: absolute;
-  top: 25%;
-  bottom: 25%;
-  width: 3px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.35);
+  top: 2px;
+  bottom: 2px;
+  width: 24px;
+  z-index: 4;
+  touch-action: none;
+  display: grid;
+  place-items: center;
 }
-.compact .bar .handle.in::after {
-  left: 5px;
+.grip i {
+  width: 14px;
+  height: 100%;
+  background: #fff;
+  box-shadow: 0 2px 8px #000a;
+  display: grid;
+  place-items: center;
 }
-.compact .bar .handle.out::after {
-  right: 5px;
+.grip.in i {
+  border-radius: 8px 3px 3px 8px;
+  margin-left: 8px;
+}
+.grip.out i {
+  border-radius: 3px 8px 8px 3px;
+  margin-right: 8px;
+}
+.grip i::after {
+  content: '';
+  width: 2px;
+  height: 40%;
+  border-radius: 1px;
+  background: #0007;
 }
 .compact .kf {
   touch-action: none;
@@ -258,7 +274,7 @@ button.m-export {
 .compact .kf::after {
   content: '';
   position: absolute;
-  inset: -12px;
+  inset: -14px -10px;
 }
 .compact .ruler,
 .compact .marker,
@@ -277,40 +293,55 @@ button.m-export {
 /* selection quick actions */
 .m-selbar {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 52px;
-  padding: 0 8px;
+  align-items: stretch;
+  height: 60px;
+  padding: 4px 4px;
+  gap: 2px;
   background: var(--panel-2);
   border-top: 1px solid var(--line-2);
-  overflow-x: auto;
-  scrollbar-width: none;
   flex-shrink: 0;
+  animation: m-sel-in 0.14s ease-out;
 }
-.m-selbar::-webkit-scrollbar {
-  display: none;
-}
-.m-selname {
-  flex: 1 0 70px;
-  min-width: 70px;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--muted);
+@keyframes m-sel-in {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
 }
 .m-selbar button {
-  min-height: 38px;
-  padding: 0 14px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
   border-radius: 10px;
-  flex-shrink: 0;
-  font-size: 13px;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.m-selbar button:active {
+  background: var(--panel-3);
+}
+.m-selbar svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .m-selbar button.danger {
   color: #ff8a93;
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--line-2));
+}
+.m-selbar button.m-selclose {
+  flex: 0 0 40px;
+  color: var(--muted);
 }
 
 /* bottom navigation */
@@ -390,6 +421,7 @@ button.m-export {
   display: flex;
   flex-direction: column;
   animation: m-sheet-in 0.18s ease-out;
+  transition: transform 0.18s ease-out;
 }
 @keyframes m-sheet-in {
   from {
@@ -398,6 +430,7 @@ button.m-export {
   }
 }
 .m-sheet-head {
+  touch-action: none; /* swipe down to close */
   position: relative;
   display: flex;
   align-items: center;
@@ -510,7 +543,10 @@ button.m-export {
     max-height: 40vh;
   }
   .toasts {
-    bottom: calc(76px + env(safe-area-inset-bottom));
+    top: calc(62px + env(safe-area-inset-top));
+    bottom: auto;
+    width: max-content;
+    max-width: calc(100vw - 24px);
   }
   .modal select {
     min-width: 120px;
@@ -559,7 +595,7 @@ button.m-export {
   .m-selbar {
     grid-column: 2;
     grid-row: 3;
-    height: 46px;
+    height: 52px;
   }
   .m-nav {
     grid-column: 1 / -1;
@@ -595,4 +631,189 @@ button.m-export {
   .m-stage .viewer-bar {
     height: 36px;
   }
+}
+
+/* playhead: a thumb-sized grip on the ruler */
+.compact .playhead-grip {
+  width: 36px;
+  margin-left: -18px;
+}
+.compact .playhead-grip span {
+  width: 16px;
+  height: 22px;
+  margin-top: 2px;
+  border-radius: 4px 4px 0 0;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.compact .playhead-line {
+  width: 2px;
+  margin-left: -0.5px;
+}
+.compact .drag-readout {
+  top: 36px;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 9px;
+}
+
+/* transport */
+.m-transport {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 56px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+  background: var(--panel);
+}
+.m-time {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+.m-time strong {
+  font: 700 15px var(--mono);
+  color: var(--accent);
+}
+.m-time span {
+  font: 500 11px var(--mono);
+  color: var(--faint);
+}
+.m-play,
+.m-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.m-tools {
+  justify-content: flex-end;
+}
+button.m-tbtn,
+button.m-playbtn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+}
+button.m-tbtn {
+  width: 40px;
+  height: 44px;
+  border-radius: 10px;
+}
+button.m-tbtn:active {
+  background: var(--panel-3);
+}
+button.m-tbtn svg,
+button.m-playbtn svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+button.m-tbtn svg circle {
+  fill: currentColor;
+  stroke: none;
+}
+button.m-tbtn.snap {
+  color: var(--muted);
+}
+button.m-tbtn.snap.on {
+  color: var(--beat);
+  background: color-mix(in srgb, var(--beat) 12%, transparent);
+}
+button.m-playbtn {
+  width: 52px;
+  height: 52px;
+  margin: 0 4px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: 0 4px 16px #0008;
+}
+button.m-playbtn svg.fill {
+  fill: currentColor;
+  stroke: none;
+  margin-left: 3px;
+}
+button.m-playbtn.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* empty timeline call to action */
+.m-timeline {
+  position: relative;
+}
+.m-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12.5px;
+  z-index: 5;
+}
+.m-empty button {
+  min-height: 52px;
+  padding: 0 22px;
+  border-radius: 14px;
+  font-size: 15px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.compact .tl-empty {
+  display: none;
+}
+
+/* first-run gesture tips */
+.m-tips {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  z-index: 40;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 16px 40px #000c;
+  font-size: 13px;
+  line-height: 1.45;
+  animation: m-sheet-in 0.2s ease-out;
+}
+.m-tips strong {
+  font-size: 15px;
+}
+.m-tips ul {
+  margin: 8px 0 12px;
+  padding-left: 18px;
+  color: var(--muted);
+}
+.m-tips li {
+  margin: 4px 0;
+}
+.m-tips b {
+  color: var(--text);
+}
+.m-tips button {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.m-stage .viewer-empty.empty-comp {
+  display: none; /* the timeline shows a big Add button instead */
 }

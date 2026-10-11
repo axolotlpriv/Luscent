@@ -97,7 +97,7 @@ export function Ruler({ width }: { width: number }) {
       scrubAudio(editor().playhead);
     };
     go(e.clientX);
-    startDrag(e, { threshold: 0, move: (_dx, _dy, ev) => go(ev.clientX, ev) });
+    startDrag(e, { threshold: 0, autoScroll: true, move: (_dx, _dy, ev) => go(ev.clientX, ev) });
   };
 
   const dragMarker = (e: React.PointerEvent, m: Marker) => {

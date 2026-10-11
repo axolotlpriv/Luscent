@@ -21,7 +21,16 @@ Projects are autosaved in the browser (IndexedDB) and listed under **Recent proj
 
 ## Phone and tablet
 
-Below 820 px wide (or on a phone held sideways) the editor switches to a touch layout: preview on top, timeline below, a bottom bar for **Add**, **Presets** and **Edit** sheets, and quick actions for the selected layer. On the timeline, drag with one finger to pan, pinch to zoom, drag a clip or its edges to move and trim, and long-press a layer or keyframe for its menu. Luscent is also an installable PWA (it works offline after the first visit) and there is an Android app, see [docs/ANDROID.md](docs/ANDROID.md).
+Below 820 px wide, or on a phone held sideways, the editor switches to a touch layout. The preview is on top and the timeline below. A bottom bar opens **Add**, **Presets** and **Edit** sheets; swipe a sheet down to close it.
+
+- **Timeline:** tap a clip to select it, then drag it to move or drag its white grips to trim. Swiping over clips that aren't selected scrolls instead of moving them.
+- **Scrolling and zoom:** pinch the timeline to zoom. Dragging toward an edge scrolls the timeline along.
+- **Playhead:** drag the pink grip to scrub.
+- **Snapping:** clips, trims and the playhead snap to the playhead, cuts, markers and beats from a finger-sized distance, with a short vibration. The magnet button turns snapping off.
+- **Preview:** drag a layer to move it; it snaps to the frame's centre and edges with guides. Drag a corner to resize, and pinch with two fingers to scale and rotate (snaps to 100% and right angles). Pinch empty space to zoom the preview, double-tap to fit it.
+- **Selected layer:** a bar offers Split, Keyframe (keys position, scale, rotation and opacity at the playhead), Edit, Copy and Delete. Long-press a layer for everything else.
+
+Luscent is also an installable PWA (it works offline after the first visit) and there is an Android app, see [docs/ANDROID.md](docs/ANDROID.md).
 
 ## Deploying
 

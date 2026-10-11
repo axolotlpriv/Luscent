@@ -5,9 +5,13 @@ import { moveLayers, slipLayer, trimLayer, type Edge, makeEditContext } from '..
 import { activeComp, editor } from '../../state/store';
 import { makeSnapper, startDrag } from './drag';
 import { longPress } from './longPress';
-import { dims, useTimelineUI } from './uiState';
+import { dims, useLayout, useTimelineUI } from './uiState';
+import { formatTimecode } from '../../core/time';
 import { Waveform } from './Waveform';
 import type { MenuItem } from '../components/fields';
+
+/** Width of the touch trim grips (px). */
+const GRIP_W = 24;
 
 const TYPE_GLYPH: Record<Layer['type'], string> = {
   solid: '■',
@@ -53,6 +57,9 @@ export const LayerRow = memo(function LayerRow(p: Props) {
   // ------------------------------------------------------------ bar drags
   const onBarDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // Touch: a clip must be selected before it moves. Until then a finger on it
+    // scrolls the timeline and a tap selects it (handled by the timeline).
+    if (e.pointerType === 'touch' && !editor().selectedLayers.includes(layer.id)) return;
     e.stopPropagation();
     select(e);
     const s = editor();
@@ -67,6 +74,7 @@ export const LayerRow = memo(function LayerRow(p: Props) {
     const ctx = makeEditContext(base, comp);
     let began = false;
     startDrag(e, {
+      autoScroll: true,
       move: (dx, _dy, ev) => {
         if (!began) {
           editor().beginGesture(slip ? 'Slip Layer' : 'Move Layers');
@@ -80,6 +88,8 @@ export const LayerRow = memo(function LayerRow(p: Props) {
         }
         const dt = snap.delta(raw, edges, ev);
         editor().editFrom(base, 'Move Layers', (d) => moveLayers(d.compositions[comp.id] as Composition, moving.map((l) => l.id), dt));
+        const start = layer.inPoint + dt;
+        useTimelineUI.setState({ readout: { time: start, text: formatTimecode(Math.max(0, start), comp.fps) } });
       },
       up: (moved) => {
         if (began) editor().endGesture();
@@ -101,6 +111,7 @@ export const LayerRow = memo(function LayerRow(p: Props) {
     const startT = edge === 'in' ? layer.inPoint : layer.outPoint;
     let began = false;
     startDrag(e, {
+      autoScroll: true,
       move: (dx, _dy, ev) => {
         if (!began) {
           editor().beginGesture('Trim Layer');
@@ -109,6 +120,8 @@ export const LayerRow = memo(function LayerRow(p: Props) {
         const ripple = editor().ripple !== ev.altKey;
         const t = snap.time(startT + dx / pxPerSec, ev);
         editor().editFrom(base, ripple ? 'Ripple Trim' : 'Trim Layer', (d) => trimLayer(d.compositions[comp.id] as Composition, layer.id, edge, t, ctx, { ripple }));
+        const l = activeComp(editor()).layers.find((x) => x.id === layer.id);
+        if (l) useTimelineUI.setState({ readout: { time: edge === 'in' ? l.inPoint : l.outPoint, text: `${(l.outPoint - l.inPoint).toFixed(2)}s` } });
       },
       up: () => {
         if (began) editor().endGesture();
@@ -178,6 +191,9 @@ export const LayerRow = memo(function LayerRow(p: Props) {
     for (const prop of Object.values(layer.props)) for (const k of prop.keyframes) ticks.push(layer.startTime + k.time);
   }
   const nameOffset = Math.max(0, -barL);
+  const compact = useLayout((st) => st.compact);
+  // Phones: the selected clip gets big trim grips just outside its edges.
+  const grips = compact && p.selected && !layer.locked;
   const toggle = (key: 'visible' | 'audible' | 'solo' | 'locked') => editor().updateLayer(layer.id, { [key]: !layer[key] } as Partial<Layer>);
 
   return (
@@ -274,9 +290,19 @@ export const LayerRow = memo(function LayerRow(p: Props) {
           {ticks.map((t, i) => (
             <span key={i} className="kf-tick" style={{ left: (t - layer.inPoint) * pxPerSec }} />
           ))}
-          <div className="handle in" onPointerDown={(e) => onHandleDown(e, 'in')} />
-          <div className="handle out" onPointerDown={(e) => onHandleDown(e, 'out')} />
+          {!compact && <div className="handle in" onPointerDown={(e) => onHandleDown(e, 'in')} />}
+          {!compact && <div className="handle out" onPointerDown={(e) => onHandleDown(e, 'out')} />}
         </div>
+        {grips && (
+          <>
+            <div className="grip in" style={{ left: barL - GRIP_W + 2 }} onPointerDown={(e) => onHandleDown(e, 'in')} aria-label="Trim start">
+              <i />
+            </div>
+            <div className="grip out" style={{ left: barL + barW - 2 }} onPointerDown={(e) => onHandleDown(e, 'out')} aria-label="Trim end">
+              <i />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

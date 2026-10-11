@@ -58,6 +58,7 @@ export function NumberField({ value, onChange, step = 1, min, max, unit, decimal
         type="text"
         value={text}
         autoFocus
+        inputMode="decimal"
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {

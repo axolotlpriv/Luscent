@@ -883,7 +883,7 @@ kbd {
 }
 .playhead-line {
   position: absolute;
-  top: 0;
+  top: 30px;
   bottom: 0;
   width: 1px;
   background: var(--accent);
@@ -891,7 +891,7 @@ kbd {
 }
 .snap-line {
   position: absolute;
-  top: 0;
+  top: 30px;
   bottom: 0;
   width: 1px;
   background: var(--beat);
@@ -1374,4 +1374,60 @@ button.logo {
   padding: 0 5px;
   min-width: 0;
   font-size: 10px;
+}
+
+/* playhead grip, drag readout */
+.playhead-grip {
+  position: absolute;
+  top: 0;
+  width: 22px;
+  height: 30px;
+  margin-left: -11px;
+  pointer-events: auto;
+  cursor: ew-resize;
+  touch-action: none;
+  display: grid;
+  place-items: start center;
+  z-index: 4;
+}
+.playhead-grip span {
+  width: 11px;
+  height: 14px;
+  margin-top: 1px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
+}
+.drag-readout {
+  position: absolute;
+  top: 34px;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: #000d;
+  border: 1px solid var(--line-2);
+  color: #fff;
+  font: 600 11px var(--mono);
+  white-space: nowrap;
+  z-index: 6;
+}
+
+/* viewer snapping guides and gesture readout */
+.snap-guide {
+  stroke: #ff3d7f;
+  stroke-opacity: 0.95;
+  stroke-dasharray: none;
+}
+.viewer-hud {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: 10px;
+  background: #000c;
+  border: 1px solid var(--line-2);
+  color: #fff;
+  font: 600 13px var(--mono);
+  pointer-events: none;
+  z-index: 5;
 }

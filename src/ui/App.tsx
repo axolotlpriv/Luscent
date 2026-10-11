@@ -184,7 +184,8 @@ function EditorScreen() {
         accept="video/*,audio/*,image/*"
         style={{ display: 'none' }}
         onChange={(e) => {
-          if (e.target.files) void editor().importFiles([...e.target.files]);
+          // On phones, imported clips go straight onto the timeline.
+          if (e.target.files) void editor().importFiles([...e.target.files], { addToComp: useLayout.getState().compact });
           e.target.value = '';
         }}
       />

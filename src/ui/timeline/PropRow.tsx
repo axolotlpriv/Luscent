@@ -73,6 +73,7 @@ export const PropRow = memo(function PropRow({ layer, def, pxPerSec, scrollTime,
     const kt = layer.startTime + k.time;
     let began = false;
     startDrag(e, {
+      autoScroll: true,
       move: (dx, _dy, ev) => {
         if (!began) {
           editor().beginGesture('Move Keyframes');

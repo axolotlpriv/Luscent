@@ -25,8 +25,38 @@ import { evaluateProp } from '../../core/animation/interpolate';
 import { activeComp, editor, useEditor } from '../../state/store';
 import { formatTimecode } from '../../core/time';
 import type { Vec2 } from '../../core/model/types';
+import { haptic } from '../haptics';
 
 const PAD = 28;
+
+type Guides = { v: number[]; h: number[] };
+const round1 = (v: number) => Math.round(v * 10) / 10;
+const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
+/** Push a quad's corners outward from its centre by `m` (for forgiving hit tests). */
+function growQuad(q: [number, number][], m: number): [number, number][] {
+  if (m <= 0) return q;
+  const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4;
+  const cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+  return q.map(([x, y]) => {
+    const d = Math.hypot(x - cx, y - cy) || 1;
+    return [x + ((x - cx) / d) * m * Math.SQRT2, y + ((y - cy) / d) * m * Math.SQRT2] as [number, number];
+  });
+}
+
+/** Axis-aligned bounds [x0, y0, x1, y1] of several rendered items, in comp space. */
+function boundsOf(items: RenderItem[]): [number, number, number, number] | null {
+  if (!items.length) return null;
+  const pts = items.flatMap((it) => itemCorners(it));
+  return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
+}
+
+/** Closest snap of any of `edges` to any of `lines` within `reach`: the correction and the line it snapped to. */
+function snapAxis(edges: number[], lines: number[], reach: number): { d: number; line: number } | null {
+  let best: { d: number; line: number } | null = null;
+  for (const e of edges) for (const l of lines) if (Math.abs(l - e) < reach && (!best || Math.abs(l - e) < Math.abs(best.d))) best = { d: l - e, line: l };
+  return best;
+}
 
 export function Viewer() {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -42,6 +72,8 @@ export function Viewer() {
   const [zoomMode, setZoomMode] = useState<'fit' | number>('fit');
   const [pan, setPan] = useState<[number, number]>([0, 0]);
   const fpsRef = useRef({ frames: 0, since: performance.now() });
+  const [guides, setGuides] = useState<Guides | null>(null);
+  const [hud, setHud] = useState<string | null>(null);
 
   const comp = useEditor(activeComp);
   const previewScale = useEditor((s) => s.previewScale);
@@ -194,19 +226,38 @@ export function Viewer() {
     return [(clientX - rect.left - left) / zoom, (clientY - rect.top - top) / zoom];
   };
 
-  const hitTest = (x: number, y: number): RenderItem | null => {
+  /** Rendered items of the selected layers at the playhead (for hit tests and handles). */
+  const selectedItems = (): RenderItem[] => {
+    const s = editor();
+    const c = activeComp(s);
+    const m = (spec: Parameters<typeof approximateTextMeasure>[0]) => (rendererRef.current ? rendererRef.current.text.measure(spec) : approximateTextMeasure(spec));
+    return s.selectedLayers
+      .map((id) => c.layers.find((l) => l.id === id))
+      .filter((l): l is NonNullable<typeof l> => !!l && !l.locked && isLayerActive(l, s.playhead) && l.visible)
+      .map((l) => evaluateLayer(s.project, c, l, s.playhead, { measureText: m }))
+      .filter((it): it is RenderItem => !!it);
+  };
+
+  /** Topmost layer under (x, y) in comp space. `tol` grows every quad (comp px) so small layers are easy to hit with a finger. */
+  const hitTest = (x: number, y: number, tol = 0): RenderItem | null => {
     const frame = frameRef.current;
     if (!frame) return null;
     const s = editor();
     const c = activeComp(s);
+    // The selected layer wins when layers overlap, so you can keep dragging what you picked.
+    for (const it of selectedItems()) if (pointInQuad(x, y, growQuad(itemCorners(it), tol))) return it;
     for (let i = frame.items.length - 1; i >= 0; i--) {
       const it = frame.items[i];
       const layer = c.layers.find((l) => l.id === it.layerId);
       if (!layer || layer.locked) continue;
-      if (pointInQuad(x, y, itemCorners(it))) return it;
+      if (pointInQuad(x, y, growQuad(itemCorners(it), tol))) return it;
     }
     return null;
   };
+
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const lastTap = useRef(0);
+  const gestureRef = useRef<{ end: () => void; pinch?: (a: { x: number; y: number }, b: { x: number; y: number }) => void } | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button === 1 || (e.button === 0 && e.altKey && zoomMode !== 'fit')) {
@@ -222,11 +273,83 @@ export function Viewer() {
       return;
     }
     if (e.button !== 0) return;
+    const touch = e.pointerType === 'touch';
+    const pts = pointers.current;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Second finger: switch to pinch (scale + rotate the selection, or zoom the view).
+    if (pts.size === 2) {
+      startPinch();
+      return;
+    }
+    if (pts.size > 2) return;
+
     const [x, y] = toComp(e.clientX, e.clientY);
     const s = editor();
-    const hit = hitTest(x, y);
+    const snapOn = () => editor().snapping;
+
+    // 1. Corner handle of a single selected layer: drag to scale around its anchor.
+    const sel = selectedItems();
+    if (sel.length === 1 && !e.shiftKey) {
+      const it = sel[0];
+      const reach = (touch ? 30 : 9) / zoom;
+      const corner = itemCorners(it).find(([cx, cy]) => Math.hypot(cx - x, cy - y) < reach);
+      const layer = activeComp(s).layers.find((l) => l.id === it.layerId);
+      if (corner && layer?.props['transform.scale']) {
+        const anchor = apply(it.matrix, ...(anchorOf(it) as [number, number]));
+        const d0 = Math.max(1e-3, Math.hypot(x - anchor[0], y - anchor[1]));
+        const s0 = evaluateProp(layer.props['transform.scale'], s.playhead - layer.startTime) as Vec2;
+        let began = false;
+        let snapped = false;
+        track(e.pointerId, {
+          move: (ev) => {
+            const [px, py] = toComp(ev.clientX, ev.clientY);
+            let f = Math.hypot(px - anchor[0], py - anchor[1]) / d0;
+            if (!began) {
+              began = true;
+              editor().beginGesture('Scale Layer');
+            }
+            const pct = s0[0] * f;
+            const near = snapOn() && Math.abs(pct - 100) < 4;
+            if (near) f = 100 / s0[0];
+            if (near && !snapped) haptic('tick');
+            snapped = near;
+            editor().setProp(layer.id, 'transform.scale', [round1(s0[0] * f), round1(s0[1] * f)]);
+            setHud(`Scale ${Math.round(s0[0] * f)}%`);
+          },
+          up: () => {
+            if (began) editor().endGesture();
+            setHud(null);
+          },
+        });
+        return;
+      }
+    }
+
+    // 2. A layer under the finger (generous on touch).
+    const hit = hitTest(x, y, (touch ? 18 : 0) / zoom);
     if (!hit) {
-      if (!e.shiftKey) s.selectLayer(null);
+      if (!touch && !e.shiftKey) s.selectLayer(null);
+      // Touch: a tap on empty space deselects; a drag pans a zoomed-in view.
+      const p0 = [e.clientX, e.clientY, pan[0], pan[1]];
+      let moved = false;
+      track(e.pointerId, {
+        move: (ev) => {
+          if (Math.hypot(ev.clientX - p0[0], ev.clientY - p0[1]) > 6) moved = true;
+          if (moved && zoomMode !== 'fit') setPan([p0[2] + ev.clientX - p0[0], p0[3] + ev.clientY - p0[1]]);
+        },
+        up: (ev) => {
+          if (moved || ev.type !== 'pointerup') return;
+          if (touch) editor().selectLayer(null);
+          // Double-tap empty space: back to a fitted, centred preview.
+          const now = performance.now();
+          if (now - lastTap.current < 320) {
+            setZoomMode('fit');
+            setPan([0, 0]);
+          }
+          lastTap.current = now;
+        },
+      });
       return;
     }
     let ids = s.selectedLayers;
@@ -236,9 +359,11 @@ export function Viewer() {
     }
     if (!ids.includes(hit.layerId)) {
       s.selectLayer(hit.layerId);
+      if (touch) haptic('select');
       ids = [hit.layerId];
     }
-    // Drag-move selected layers' positions (in each layer's parent space).
+
+    // 3. Move the selected layers' positions (in each layer's parent space), snapping to the frame's centre and edges.
     const c = activeComp(s);
     const t = s.playhead;
     const targets = ids
@@ -250,41 +375,177 @@ export function Viewer() {
         return { id: l.id, start: evaluateProp(l.props['transform.position'], t - l.startTime) as Vec2, inv };
       });
     if (targets.length === 0) return;
+    const box = boundsOf(selectedItems().filter((it) => ids.includes(it.layerId)));
     const sx = x;
     const sy = y;
     let began = false;
-    const move = (ev: PointerEvent) => {
-      let [cx, cy] = toComp(ev.clientX, ev.clientY);
-      let dx = cx - sx;
-      let dy = cy - sy;
-      if (!began && Math.hypot(dx, dy) * zoom < 3) return;
-      if (!began) {
-        began = true;
-        editor().beginGesture('Move Layer');
-      }
-      if (ev.shiftKey) {
-        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
-        else dx = 0;
-      }
-      cx = dx;
-      cy = dy;
-      for (const tg of targets) {
-        let d: [number, number] = [cx, cy];
-        if (tg.inv) {
-          const o = apply(tg.inv, 0, 0);
-          const p = apply(tg.inv, cx, cy);
-          d = [p[0] - o[0], p[1] - o[1]];
+    let lastGuide = '';
+    track(e.pointerId, {
+      move: (ev) => {
+        const [cx0, cy0] = toComp(ev.clientX, ev.clientY);
+        let dx = cx0 - sx;
+        let dy = cy0 - sy;
+        if (!began && Math.hypot(dx, dy) * zoom < (touch ? 8 : 3)) return;
+        if (!began) {
+          began = true;
+          editor().beginGesture('Move Layer');
         }
-        editor().setProp(tg.id, 'transform.position', [Math.round((tg.start[0] + d[0]) * 10) / 10, Math.round((tg.start[1] + d[1]) * 10) / 10]);
+        if (ev.shiftKey) {
+          if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+          else dx = 0;
+        }
+        const g: Guides = { v: [], h: [] };
+        if (box && snapOn() !== (ev.ctrlKey || ev.metaKey)) {
+          const reach = (touch ? 14 : 7) / zoom;
+          const sxr = snapAxis([box[0] + dx, (box[0] + box[2]) / 2 + dx, box[2] + dx], [0, c.width / 2, c.width], reach);
+          const syr = snapAxis([box[1] + dy, (box[1] + box[3]) / 2 + dy, box[3] + dy], [0, c.height / 2, c.height], reach);
+          if (sxr) {
+            dx += sxr.d;
+            g.v.push(sxr.line);
+          }
+          if (syr) {
+            dy += syr.d;
+            g.h.push(syr.line);
+          }
+        }
+        const key = g.v.join() + '|' + g.h.join();
+        if (key !== lastGuide && key !== '|') haptic('tick');
+        lastGuide = key;
+        setGuides(g.v.length || g.h.length ? g : null);
+        for (const tg of targets) {
+          let d: [number, number] = [dx, dy];
+          if (tg.inv) {
+            const o = apply(tg.inv, 0, 0);
+            const p = apply(tg.inv, dx, dy);
+            d = [p[0] - o[0], p[1] - o[1]];
+          }
+          editor().setProp(tg.id, 'transform.position', [round1(tg.start[0] + d[0]), round1(tg.start[1] + d[1])]);
+        }
+      },
+      up: () => {
+        if (began) editor().endGesture();
+        setGuides(null);
+      },
+    });
+  };
+
+  /** Follow one pointer until it lifts; a second finger hands over to the pinch gesture. */
+  const track = (id: number, h: { move: (ev: PointerEvent) => void; up?: (ev: PointerEvent) => void }) => {
+    let pinching = false;
+    const move = (ev: PointerEvent) => {
+      const pts = pointers.current;
+      if (pts.has(ev.pointerId)) pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (pts.size >= 2) {
+        pinching = true;
+        const [a, b] = [...pts.values()];
+        gestureRef.current?.pinch?.(a, b);
+        return;
       }
+      if (ev.pointerId === id && !pinching) h.move(ev);
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
+      pointers.current.delete(ev.pointerId);
+      if (pointers.current.size > 0) return;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      if (began) editor().endGesture();
+      window.removeEventListener('pointercancel', up);
+      gestureRef.current?.end();
+      gestureRef.current = null;
+      h.up?.(ev);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  /** Two fingers: scale/rotate/move the selected layers, or zoom the view when nothing is selected. */
+  const startPinch = () => {
+    const [a0, b0] = [...pointers.current.values()];
+    const d0 = Math.max(1, Math.hypot(b0.x - a0.x, b0.y - a0.y));
+    const ang0 = Math.atan2(b0.y - a0.y, b0.x - a0.x);
+    const mid0 = toComp((a0.x + b0.x) / 2, (a0.y + b0.y) / 2);
+    const s = editor();
+    const c = activeComp(s);
+    const t = s.playhead;
+    const layers = c.layers.filter((l) => s.selectedLayers.includes(l.id) && !l.locked);
+    setGuides(null);
+    if (!layers.length) {
+      const zoom0 = zoom;
+      const pan0 = pan;
+      gestureRef.current = {
+        pinch: (a, b) => {
+          const f = Math.hypot(b.x - a.x, b.y - a.y) / d0;
+          setZoomMode(Math.max(0.05, Math.min(8, zoom0 * f)));
+          setPan([pan0[0] + ((a.x + b.x) / 2 - (a0.x + b0.x) / 2), pan0[1] + ((a.y + b.y) / 2 - (a0.y + b0.y) / 2)]);
+        },
+        end: () => undefined,
+      };
+      return;
+    }
+    const base = layers.map((l) => {
+      const lt = t - l.startTime;
+      const parent = l.parentId ? c.layers.find((p) => p.id === l.parentId) : null;
+      return {
+        id: l.id,
+        scale: l.props['transform.scale'] ? (evaluateProp(l.props['transform.scale'], lt) as Vec2) : null,
+        rot: l.props['transform.rotation'] ? (evaluateProp(l.props['transform.rotation'], lt) as number) : null,
+        pos: l.props['transform.position'] ? (evaluateProp(l.props['transform.position'], lt) as Vec2) : null,
+        inv: parent ? invert(worldMatrix(c, parent, t)) : null,
+      };
+    });
+    let began = false;
+    let snapKey = '';
+    gestureRef.current = {
+      pinch: (a, b) => {
+        if (!began) {
+          began = true;
+          editor().beginGesture('Transform Layer');
+        }
+        let f = Math.hypot(b.x - a.x, b.y - a.y) / d0;
+        let rot = ((Math.atan2(b.y - a.y, b.x - a.x) - ang0) * 180) / Math.PI;
+        const mid = toComp((a.x + b.x) / 2, (a.y + b.y) / 2);
+        const snapping = editor().snapping;
+        const first = base[0];
+        // Snap scale to 100% and rotation to the nearest quarter turn when close.
+        let key = '';
+        if (snapping && first.scale && Math.abs(first.scale[0] * f - 100) < 5) {
+          f = 100 / first.scale[0];
+          key += 's';
+        }
+        if (snapping && first.rot !== null) {
+          const total = first.rot + rot;
+          const q = Math.round(total / 90) * 90;
+          if (Math.abs(total - q) < 6) {
+            rot = q - first.rot;
+            key += 'r';
+          }
+        }
+        if (key && key !== snapKey) haptic('tick');
+        snapKey = key;
+        const dx = mid[0] - mid0[0];
+        const dy = mid[1] - mid0[1];
+        for (const bl of base) {
+          if (bl.scale) editor().setProp(bl.id, 'transform.scale', [round1(bl.scale[0] * f), round1(bl.scale[1] * f)]);
+          if (bl.rot !== null) editor().setProp(bl.id, 'transform.rotation', round1(bl.rot + rot));
+          if (bl.pos) {
+            let d: [number, number] = [dx, dy];
+            if (bl.inv) {
+              const o = apply(bl.inv, 0, 0);
+              const p = apply(bl.inv, dx, dy);
+              d = [p[0] - o[0], p[1] - o[1]];
+            }
+            editor().setProp(bl.id, 'transform.position', [round1(bl.pos[0] + d[0]), round1(bl.pos[1] + d[1])]);
+          }
+        }
+        const sc = first.scale ? `${Math.round(first.scale[0] * f)}%` : '';
+        const rr = first.rot !== null ? `${Math.round(first.rot + rot)}°` : '';
+        setHud([sc, rr].filter(Boolean).join(' · '));
+      },
+      end: () => {
+        if (began) editor().endGesture();
+        setHud(null);
+      },
+    };
   };
 
   const onWheel = (e: React.WheelEvent) => {
@@ -341,6 +602,10 @@ export function Viewer() {
                 ))}
               </g>
             ))}
+            {guides &&
+              guides.v.map((gx) => <line key={'gv' + gx} className="snap-guide" x1={gx} y1={-2000} x2={gx} y2={comp.height + 2000} strokeWidth={1.5 / zoom} />)}
+            {guides &&
+              guides.h.map((gy) => <line key={'gh' + gy} className="snap-guide" x1={-2000} y1={gy} x2={comp.width + 2000} y2={gy} strokeWidth={1.5 / zoom} />)}
             {selItems.map((it) => {
               const q = itemCorners(it);
               const anchor = apply(it.matrix, ...(anchorOf(it) as [number, number]));
@@ -352,9 +617,13 @@ export function Viewer() {
                     stroke="#7c5cff"
                     strokeWidth={1.5 / zoom}
                   />
-                  {q.map((p, i) => (
-                    <rect key={i} x={p[0] - 3.5 / zoom} y={p[1] - 3.5 / zoom} width={7 / zoom} height={7 / zoom} fill="#fff" stroke="#7c5cff" strokeWidth={1 / zoom} />
-                  ))}
+                  {q.map((p, i) =>
+                    coarse ? (
+                      <circle key={i} cx={p[0]} cy={p[1]} r={9 / zoom} fill="#fff" stroke="#7c5cff" strokeWidth={2 / zoom} />
+                    ) : (
+                      <rect key={i} x={p[0] - 3.5 / zoom} y={p[1] - 3.5 / zoom} width={7 / zoom} height={7 / zoom} fill="#fff" stroke="#7c5cff" strokeWidth={1 / zoom} />
+                    ),
+                  )}
                   <circle cx={anchor[0]} cy={anchor[1]} r={5 / zoom} fill="none" stroke="#fff" strokeWidth={1.2 / zoom} />
                   <path
                     d={`M${anchor[0] - 8 / zoom} ${anchor[1]}h${16 / zoom}M${anchor[0]} ${anchor[1] - 8 / zoom}v${16 / zoom}`}
@@ -366,6 +635,7 @@ export function Viewer() {
             })}
           </g>
         </svg>
+        {hud && <div className="viewer-hud">{hud}</div>}
         {error && (
           <div className="viewer-empty">
             <div>
@@ -375,7 +645,7 @@ export function Viewer() {
           </div>
         )}
         {!error && comp.layers.length === 0 && (
-          <div className="viewer-empty">
+          <div className="viewer-empty empty-comp">
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Drop clips, images or a track here</div>
               <div className="hint" style={{ marginTop: 4 }}>

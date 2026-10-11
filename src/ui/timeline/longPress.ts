@@ -1,4 +1,5 @@
 import type { PointerEvent as RPointerEvent } from 'react';
+import { haptic } from '../haptics';
 
 /**
  * Touch long-press → the same context menu a right-click opens. The browser's
@@ -25,6 +26,7 @@ export function longPress(open: (x: number, y: number) => void, ms = 480) {
       };
       const timer = setTimeout(() => {
         stop();
+        haptic('select');
         open(x0, y0);
       }, ms);
       window.addEventListener('pointermove', move, true);

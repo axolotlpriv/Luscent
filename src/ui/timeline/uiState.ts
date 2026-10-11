@@ -8,11 +8,12 @@ interface TimelineUI {
   /** Row index where a layer-reorder drag would drop. */
   dropIndex: number | null;
   trackWidth: number;
+  /** Floating label while dragging (comp time it points at, and the text). */
+  readout: { time: number; text: string } | null;
 }
 
-export const useTimelineUI = create<TimelineUI>(() => ({ snap: null, marquee: null, dropIndex: null, trackWidth: 800 }));
+export const useTimelineUI = create<TimelineUI>(() => ({ snap: null, marquee: null, dropIndex: null, trackWidth: 800, readout: null }));
 
-export const SNAP_PX = 8;
 
 /**
  * Responsive layout. `compact` is the phone layout (bottom navigation, sheets,
@@ -20,8 +21,9 @@ export const SNAP_PX = 8;
  * and rendering agree; the matching CSS variables are kept in sync here.
  */
 const COMPACT_QUERY = '(max-width: 820px), (max-height: 500px) and (pointer: coarse)';
-const DESKTOP_DIMS = { leftW: 340, layerH: 28, propH: 24 };
-const COMPACT_DIMS = { leftW: 140, layerH: 40, propH: 34 };
+// snapPx: how close (in screen pixels) an edge must come to a target to snap. Fingers need far more than a mouse.
+const DESKTOP_DIMS = { leftW: 340, layerH: 28, propH: 24, snapPx: 8 };
+const COMPACT_DIMS = { leftW: 96, layerH: 44, propH: 36, snapPx: 22 };
 
 export const dims = { ...DESKTOP_DIMS };
 

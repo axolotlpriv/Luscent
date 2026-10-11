@@ -10,7 +10,9 @@ import { LayerRow } from './LayerRow';
 import { PropRow } from './PropRow';
 import { Ruler, tickStep } from './Ruler';
 import { makeSnapper, startDrag } from './drag';
-import { dims, useTimelineUI } from './uiState';
+import { dims, useLayout, useTimelineUI } from './uiState';
+import { haptic } from '../haptics';
+import { scrubAudio } from '../../engine/playback/Transport';
 import { GraphEditor } from '../graph/GraphEditor';
 import { useEffectRegistry } from '../panels/EffectStack';
 
@@ -29,6 +31,7 @@ export function Timeline() {
   const trackWidth = useTimelineUI((s) => s.trackWidth);
   const dropIndex = useTimelineUI((s) => s.dropIndex);
   const graphMode = useEditor((s) => s.graphMode);
+  const compact = useLayout((s) => s.compact);
   const fxVersion = useEffectRegistry();
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef<HTMLDivElement>(null);
@@ -101,7 +104,7 @@ export function Timeline() {
   useEffect(() => {
     const el = scrollRef.current!;
     const pts = new Map<number, { x: number; y: number }>();
-    let pan: { x0: number; scroll0: number; moved: boolean } | null = null;
+    let pan: { x0: number; scroll0: number; moved: boolean; row: number | null } | null = null;
     let pinch: { d0: number; zoom0: number; anchorT: number } | null = null;
     const pair = () => {
       const [a, b] = [...pts.values()];
@@ -122,8 +125,11 @@ export function Timeline() {
         const px = mid - el.getBoundingClientRect().left - dims.leftW;
         pinch = { d0: d, zoom0: s.pxPerSec, anchorT: s.scrollTime + Math.max(0, px) / s.pxPerSec };
         pan = null;
-      } else if (pts.size === 1 && !(e.target as HTMLElement).closest('.bar,.kf,.tl-cell-left')) {
-        pan = { x0: e.clientX, scroll0: s.scrollTime, moved: false };
+      } else if (pts.size === 1 && !(e.target as HTMLElement).closest('.bar.selected,.grip,.kf,.tl-cell-left')) {
+        // Empty track or a clip that isn't selected yet: a drag scrolls, a tap selects the clip (or clears the selection).
+        const target = e.target as HTMLElement;
+        const row = target.closest('.bar') ? target.closest<HTMLElement>('[data-layer-index]') : null;
+        pan = { x0: e.clientX, scroll0: s.scrollTime, moved: false, row: row ? Number(row.dataset.layerIndex) : null };
       }
     };
     const move = (e: PointerEvent) => {
@@ -150,8 +156,12 @@ export function Timeline() {
         // A tap on empty track space deselects (a cancelled gesture was a scroll).
         if (pan && !pan.moved && e.type === 'pointerup') {
           const s = editor();
+          const layer = pan.row !== null ? activeComp(s).layers[pan.row] : undefined;
           s.selectKeys([]);
-          s.selectLayer(null);
+          if (layer) {
+            s.selectLayer(layer.id);
+            haptic('select');
+          } else s.selectLayer(null);
         }
         pan = null;
       }
@@ -278,7 +288,11 @@ export function Timeline() {
 
   return (
     <div className="timeline" onDragOver={onDragOver} onDrop={onDrop}>
-      <TimelineToolbar fitAll={fitAll} compStack={compStack} names={compStack.map((id) => project.compositions[id]?.name ?? '?')} />
+      {compact ? (
+        <MobileTransport fitAll={fitAll} />
+      ) : (
+        <TimelineToolbar fitAll={fitAll} compStack={compStack} names={compStack.map((id) => project.compositions[id]?.name ?? '?')} />
+      )}
       <div className="tl-main">
         <div className="tl-head-row">
           <div className="tl-left-head" style={{ width: dims.leftW }}>
@@ -349,11 +363,110 @@ function PlayheadOverlay() {
   const pxPerSec = useEditor((s) => s.pxPerSec);
   const scrollTime = useEditor((s) => s.scrollTime);
   const snap = useTimelineUI((s) => s.snap);
+  const readout = useTimelineUI((s) => s.readout);
   const x = (playhead - scrollTime) * pxPerSec;
+
+  // Drag the playhead by its grip (big enough for a thumb), snapping to edits, markers and beats.
+  const onGrip = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const s = editor();
+    if (s.playing) s.pause();
+    const snapper = makeSnapper({ playhead: false });
+    const t0 = s.playhead;
+    haptic('select');
+    startDrag(e, {
+      threshold: 0,
+      autoScroll: true,
+      move: (dx, _dy, ev) => {
+        const t = snapper.time(Math.max(0, t0 + dx / editor().pxPerSec), ev);
+        editor().setPlayhead(t);
+        scrubAudio(editor().playhead);
+        const fps = activeComp(editor()).fps;
+        useTimelineUI.setState({ readout: { time: t, text: formatTimecode(t, fps) } });
+      },
+    });
+  };
+
   return (
-    <div className="tl-overlay" style={{ left: dims.leftW, top: 30 }}>
-      {x >= 0 && <div className="playhead-line" style={{ left: x }} />}
+    <div className="tl-overlay" style={{ left: dims.leftW, top: 0 }}>
+      {x >= -20 && (
+        <>
+          <div className="playhead-line" style={{ left: x }} />
+          <div className="playhead-grip" style={{ left: x }} onPointerDown={onGrip} title="Drag to scrub">
+            <span />
+          </div>
+        </>
+      )}
       {snap && <div className={'snap-line ' + snap.kind} style={{ left: (snap.time - scrollTime) * pxPerSec }} />}
+      {readout && (
+        <div className="drag-readout" style={{ left: Math.max(30, (readout.time - scrollTime) * pxPerSec) }}>
+          {readout.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Phone transport: big play button, frame steps, snapping toggle and a tools menu. */
+function MobileTransport({ fitAll }: { fitAll: () => void }) {
+  const playing = useEditor((s) => s.playing);
+  const snapping = useEditor((s) => s.snapping);
+  const playhead = useEditor((s) => s.playhead);
+  const comp = useEditor(activeComp);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const s = useEditor.getState();
+  const openTools = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setMenu({
+      x: r.right - 230,
+      y: r.bottom + 4,
+      items: [
+        { label: 'Add marker here', action: () => editor().addMarker() },
+        { label: s.beatSnap ? 'Beat snapping: on' : 'Beat snapping: off', action: () => editor().set('beatSnap', !editor().beatSnap) },
+        { label: s.ripple ? 'Ripple edits: on' : 'Ripple edits: off', action: () => editor().set('ripple', !editor().ripple) },
+        { label: s.loop ? 'Loop playback: on' : 'Loop playback: off', action: () => editor().set('loop', !editor().loop) },
+        { separator: true, label: '' },
+        { label: s.graphMode ? 'Hide graph editor' : 'Graph editor', action: () => editor().set('graphMode', !editor().graphMode) },
+        { label: 'Fit whole timeline', action: fitAll },
+        { label: 'Previous cut', action: () => editor().jump('prev-edit') },
+        { label: 'Next cut', action: () => editor().jump('next-edit') },
+        { label: 'Jump to start', action: () => editor().jump('start') },
+        { label: 'Jump to end', action: () => editor().jump('end') },
+      ],
+    });
+  };
+  return (
+    <div className="m-transport">
+      <div className="m-time">
+        <strong>{formatTimecode(playhead, comp.fps)}</strong>
+        <span>{formatTimecode(comp.duration, comp.fps)}</span>
+      </div>
+      <div className="m-play">
+        <button className="m-tbtn" aria-label="Previous frame" onClick={() => s.stepFrames(-1)}>
+          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" /></svg>
+        </button>
+        <button className={'m-playbtn' + (playing ? ' on' : '')} aria-label={playing ? 'Pause' : 'Play'} onClick={() => s.togglePlay()}>
+          {playing ? (
+            <svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="fill"><path d="M8 5l11 7-11 7z" /></svg>
+          )}
+        </button>
+        <button className="m-tbtn" aria-label="Next frame" onClick={() => s.stepFrames(1)}>
+          <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
+        </button>
+      </div>
+      <div className="m-tools">
+        <button className={'m-tbtn snap' + (snapping ? ' on' : '')} aria-label="Snapping" aria-pressed={snapping} onClick={() => s.set('snapping', !snapping)}>
+          <svg viewBox="0 0 24 24"><path d="M6 4v7a6 6 0 0 0 12 0V4M6 8h4M14 8h4" /></svg>
+        </button>
+        <button className="m-tbtn" aria-label="Timeline tools" onClick={openTools}>
+          <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+        </button>
+      </div>
+      {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
     </div>
   );
 }
