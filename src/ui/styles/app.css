@@ -1090,3 +1090,59 @@ kbd {
 .ease-btn:hover {
   color: var(--text);
 }
+
+/* ---------------------------------------------------------------- effects */
+.effect-card {
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  margin-top: 6px;
+  background: var(--panel-2);
+}
+.effect-card.disabled {
+  opacity: 0.55;
+}
+.effect-head {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 4px;
+}
+.effect-head button.icon {
+  padding: 1px 4px;
+  min-width: 18px;
+  font-size: 11px;
+}
+.effect-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.effect-params {
+  padding: 2px 6px 6px 8px;
+  border-top: 1px solid var(--line);
+}
+.effect-browser {
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  padding: 6px;
+  background: var(--panel-2);
+  margin-bottom: 6px;
+}
+.effect-browser input {
+  width: 100%;
+}
+.effect-browser-list {
+  max-height: 280px;
+  overflow: auto;
+}
+.mini-select {
+  max-width: 130px;
+  padding: 1px 4px !important;
+  font-size: 11px;
+}
+.mini-select.animated {
+  color: #ffb3cd;
+}

@@ -9,15 +9,19 @@ export type PropKind = 'number' | 'vec2' | 'color';
 export interface PropDef {
   path: PropPath;
   label: string;
-  group: 'transform' | 'content' | 'audio';
+  group: 'transform' | 'content' | 'audio' | 'effects' | 'time';
   kind: PropKind;
-  unit?: '%' | '°' | 'px' | 'dB';
+  unit?: '%' | '°' | 'px' | 'dB' | 's';
   min?: number;
   max?: number;
   /** Value change per pixel when scrubbing a number field. */
   step: number;
   /** Shortcut letter that reveals this property in the timeline (AE style). */
   reveal?: string;
+  /** Discrete choice (value is the option index). */
+  options?: string[];
+  /** On/off switch (value 0 or 1). */
+  toggle?: boolean;
 }
 
 const T = (d: Omit<PropDef, 'group'>): PropDef => ({ ...d, group: 'transform' });
@@ -87,12 +91,22 @@ export function setDynamicPropDefs(fn: (layer: unknown) => PropDef[]): void {
   dynamicDefs = fn;
 }
 
+export const TIME_REMAP_DEF: PropDef = {
+  path: 'time.remap',
+  label: 'Time Remap',
+  group: 'time',
+  kind: 'number',
+  unit: 's',
+  step: 1 / 60,
+};
+
 const ALL_DEFS = new Map<PropPath, PropDef>();
+ALL_DEFS.set(TIME_REMAP_DEF.path, TIME_REMAP_DEF);
 for (const d of TRANSFORM_PROPS) ALL_DEFS.set(d.path, d);
 for (const defs of Object.values(CONTENT_PROPS)) for (const d of defs) ALL_DEFS.set(d.path, d);
 
-export function getPropDef(path: PropPath): PropDef | undefined {
-  return ALL_DEFS.get(path);
+export function getPropDef(path: PropPath, layer?: unknown): PropDef | undefined {
+  return ALL_DEFS.get(path) ?? (layer ? dynamicDefs(layer).find((d) => d.path === path) : undefined);
 }
 
 export function staticProp<T extends PropValue>(value: T): AnimProp<T> {

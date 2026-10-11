@@ -87,7 +87,40 @@ export type LayerType =
   | 'precomp'
   | 'null';
 
-export type BlendMode = 'normal' | 'add' | 'screen' | 'multiply' | 'lighten';
+export type BlendMode =
+  | 'normal'
+  | 'add'
+  | 'screen'
+  | 'multiply'
+  | 'lighten'
+  | 'darken'
+  | 'overlay'
+  | 'softLight'
+  | 'hardLight'
+  | 'colorDodge'
+  | 'colorBurn'
+  | 'difference'
+  | 'exclusion'
+  | 'subtract'
+  | 'divide'
+  | 'hue'
+  | 'saturation'
+  | 'color'
+  | 'luminosity';
+
+/**
+ * An effect applied to a layer. Parameter values live in `layer.props` under
+ * `fx.<instance id>.<param id>` so they animate like any other property.
+ */
+export interface EffectInstance {
+  id: Id;
+  /** Plugin id in the effect registry (e.g. "luscent.glow"). */
+  pluginId: string;
+  enabled: boolean;
+}
+
+/** Frame interpolation used when time remapping lands between source frames. */
+export type FrameBlending = 'none' | 'blend' | 'optical-flow';
 
 /** Property paths are "group.name", e.g. "transform.position". */
 export type PropPath = string;
@@ -112,6 +145,13 @@ export interface LayerBase {
   parentId: Id | null;
   blendMode: BlendMode;
   props: Record<PropPath, AnimProp>;
+  /** Effect stack, applied top to bottom. Optional for old projects. */
+  effects?: EffectInstance[];
+  /** Adjustment layer: its effects apply to everything below it. */
+  adjustment?: boolean;
+  /** Time remapping (video and precomp layers): `time.remap` maps layer time → source time. */
+  timeRemap?: boolean;
+  frameBlending?: FrameBlending;
 }
 
 export interface SolidLayer extends LayerBase {

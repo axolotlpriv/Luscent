@@ -18,6 +18,25 @@ export function PropValue({ layer, def }: { layer: Layer; def: PropDef }) {
   const label = `Change ${def.label}`;
   const decimals = 1;
 
+  if (def.kind === 'number' && def.options) {
+    return (
+      <select
+        className={'mini-select' + (animated ? ' animated' : '')}
+        value={Math.round(v as number)}
+        onChange={(e) => setProp(layer.id, def.path, Number(e.target.value))}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {def.options.map((o, i) => (
+          <option key={i} value={i}>
+            {o}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (def.kind === 'number' && def.toggle) {
+    return <input type="checkbox" checked={(v as number) > 0.5} onChange={(e) => setProp(layer.id, def.path, e.target.checked ? 1 : 0)} />;
+  }
   if (def.kind === 'number') {
     return (
       <NumberField

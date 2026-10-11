@@ -14,6 +14,7 @@ const ADDERS: { kind: LayerKind; glyph: string; label: string; title: string }[]
   { kind: 'solid', glyph: '■', label: 'Solid', title: 'Full-frame solid' },
   { kind: 'null', glyph: '⌖', label: 'Null', title: 'Null object (parent controller)' },
   { kind: 'flash', glyph: '✦', label: 'Flash', title: 'White flash at the playhead' },
+  { kind: 'adjustment', glyph: '◐', label: 'Adjust', title: 'Adjustment layer: its effects apply to everything below' },
 ];
 
 function fmtDuration(m: MediaItem) {

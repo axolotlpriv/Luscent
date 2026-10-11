@@ -5,8 +5,10 @@ import { installTransport } from './engine/playback/Transport';
 import { installAutosave, restoreSession } from './engine/persist/autosave';
 import { editor } from './state/store';
 import { seedDemo } from './demo';
+import { registerBuiltinEffects } from './effects';
 import './ui/styles/app.css';
 
+registerBuiltinEffects();
 installTransport();
 
 async function boot() {

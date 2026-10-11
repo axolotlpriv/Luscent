@@ -74,6 +74,8 @@ import { isLayerActive } from '../core/render/evaluate';
 import { compContains, precompose } from '../core/timeline/precompose';
 import { clamp, quantize } from '../core/time';
 import { mediaEngine } from '../engine/media/MediaEngine';
+import { defaultParamProp, effectRegistry, fxPath, instantiateEffect } from '../core/effects/registry';
+import { pluginParams } from '../core/effects/types';
 import { idb } from '../engine/persist/db';
 
 export interface KeySel {
@@ -91,7 +93,7 @@ export interface Toast {
   kind: 'info' | 'error' | 'success';
 }
 
-export type LayerKind = 'solid' | 'rect' | 'ellipse' | 'text' | 'null' | 'flash';
+export type LayerKind = 'solid' | 'rect' | 'ellipse' | 'text' | 'null' | 'flash' | 'adjustment';
 
 export interface EditorState {
   project: Project;
@@ -232,6 +234,13 @@ export interface Actions {
   applyEasingToSelected(easing: string | Bezier): void;
   setKeyEase(layerId: Id, path: PropPath, keyId: Id, side: 'in' | 'out', ease: Partial<TemporalEase>): void;
   bakeSelectedKeys(): void;
+  // effects
+  addEffect(layerId: Id, pluginId: string): void;
+  removeEffect(layerId: Id, instanceId: Id): void;
+  toggleEffect(layerId: Id, instanceId: Id): void;
+  moveEffect(layerId: Id, instanceId: Id, dir: -1 | 1): void;
+  duplicateEffect(layerId: Id, instanceId: Id): void;
+  resetEffect(layerId: Id, instanceId: Id): void;
   // markers & work area
   addMarker(t?: number): void;
   updateMarker(id: Id, patch: Partial<Marker>): void;
@@ -541,6 +550,13 @@ export const useEditor = create<Store>()((set, get) => {
         case 'null':
           layer = createNullLayer(opts);
           break;
+        case 'adjustment': {
+          const l = createSolidLayer({ ...opts, name: 'Adjustment Layer', color: [1, 1, 1, 1] });
+          l.adjustment = true;
+          l.effects = [];
+          layer = l;
+          break;
+        }
         case 'flash': {
           // White flash: solid with a 4-frame opacity spike at the playhead.
           const l = createSolidLayer({ ...opts, name: 'Flash', color: [1, 1, 1, 1], outPoint: t + 6 / comp.fps });
@@ -764,7 +780,7 @@ export const useEditor = create<Store>()((set, get) => {
       const prop = l?.props[path];
       if (!l || !prop) return;
       const lt = q(layerTime(l) + l.startTime) - l.startTime;
-      const def = getPropDef(path);
+      const def = getPropDef(path, l);
       editProps(`Change ${def?.label ?? path}`, [{ layerId, path, prop: setValueAt(prop, lt, value, 0.5 / comp.fps) }]);
     },
     toggleStopwatch(layerId, path) {
@@ -848,6 +864,69 @@ export const useEditor = create<Store>()((set, get) => {
       const prop = l?.props[path];
       if (!prop) return;
       editProps('Edit Ease', [{ layerId, path, prop: setKeyEase(prop, keyId, side, ease) }]);
+    },
+    addEffect(layerId, pluginId) {
+      const reg = effectRegistry.get(pluginId);
+      const comp = activeComp(get());
+      if (!reg) return;
+      const { instance, props } = instantiateEffect(reg.plugin, comp);
+      editComp(`Add ${reg.plugin.name}`, (c) => {
+        const l = c.layers.find((x) => x.id === layerId);
+        if (!l) return;
+        l.effects = [...(l.effects ?? []), instance];
+        Object.assign(l.props, props);
+      });
+      set({ expanded: { ...get().expanded } });
+    },
+    removeEffect(layerId, instanceId) {
+      editComp('Remove Effect', (c) => {
+        const l = c.layers.find((x) => x.id === layerId);
+        if (!l) return;
+        l.effects = (l.effects ?? []).filter((e) => e.id !== instanceId);
+        for (const k of Object.keys(l.props)) if (k.startsWith(`fx.${instanceId}.`)) delete l.props[k];
+      });
+    },
+    toggleEffect(layerId, instanceId) {
+      editComp('Toggle Effect', (c) => {
+        const e = c.layers.find((x) => x.id === layerId)?.effects?.find((x) => x.id === instanceId);
+        if (e) e.enabled = !e.enabled;
+      });
+    },
+    moveEffect(layerId, instanceId, dir) {
+      editComp('Reorder Effects', (c) => {
+        const l = c.layers.find((x) => x.id === layerId);
+        if (!l?.effects) return;
+        const i = l.effects.findIndex((e) => e.id === instanceId);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= l.effects.length) return;
+        const [e] = l.effects.splice(i, 1);
+        l.effects.splice(j, 0, e);
+      });
+    },
+    duplicateEffect(layerId, instanceId) {
+      editComp('Duplicate Effect', (c) => {
+        const l = c.layers.find((x) => x.id === layerId);
+        const src = l?.effects?.find((e) => e.id === instanceId);
+        if (!l || !src) return;
+        const copy = { ...src, id: uid('fx_') };
+        const i = l.effects!.indexOf(src);
+        l.effects!.splice(i + 1, 0, copy);
+        for (const [k, v] of Object.entries(l.props)) {
+          if (k.startsWith(`fx.${instanceId}.`)) l.props[`fx.${copy.id}.${k.slice(instanceId.length + 4)}`] = deepClone(v) as typeof v;
+        }
+      });
+    },
+    resetEffect(layerId, instanceId) {
+      const comp = activeComp(get());
+      const l = comp.layers.find((x) => x.id === layerId);
+      const inst = l?.effects?.find((e) => e.id === instanceId);
+      const reg = inst ? effectRegistry.get(inst.pluginId) : undefined;
+      if (!reg || !inst) return;
+      editComp('Reset Effect', (c) => {
+        const dl = c.layers.find((x) => x.id === layerId);
+        if (!dl) return;
+        for (const spec of pluginParams(reg.plugin)) dl.props[fxPath(instanceId, spec.id)] = defaultParamProp(spec, comp) as Draft<AnimProp>;
+      });
     },
     bakeSelectedKeys() {
       const fps = activeComp(get()).fps;

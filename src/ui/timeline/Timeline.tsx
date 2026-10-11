@@ -38,7 +38,7 @@ export function Timeline() {
     const out: Row[] = [];
     comp.layers.forEach((layer, index) => {
       out.push({ kind: 'layer', layer, index });
-      const defs = propDefsFor(layer.type);
+      const defs = propDefsFor(layer.type, layer);
       let shown: PropDef[] = [];
       const revealApplies = reveal && (selectedLayers.length === 0 || selectedLayers.includes(layer.id));
       if (revealApplies && reveal === 'animated') shown = defs.filter((d) => (layer.props[d.path]?.keyframes.length ?? 0) > 0);

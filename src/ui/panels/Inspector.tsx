@@ -7,8 +7,15 @@ import { activeComp, editor, useEditor } from '../../state/store';
 import { ColorField, NumberField } from '../components/fields';
 import { KeyNav, PropValue, Stopwatch } from '../components/PropEditor';
 import { EasingPanel } from '../graph/EasingPanel';
+import { EffectStack } from './EffectStack';
 
-const BLEND_MODES: BlendMode[] = ['normal', 'add', 'screen', 'multiply', 'lighten'];
+const BLEND_MODES: BlendMode[] = [
+  'normal', 'add', 'screen', 'lighten', 'colorDodge',
+  'multiply', 'darken', 'colorBurn', 'subtract', 'divide',
+  'overlay', 'softLight', 'hardLight', 'difference', 'exclusion',
+  'hue', 'saturation', 'color', 'luminosity',
+];
+const BLEND_LABEL = (m: string) => m.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
 const FONTS = [
   'Inter, system-ui, sans-serif',
   'Impact, Haettenschweiler, sans-serif',
@@ -47,7 +54,7 @@ function KeyframeTools() {
 function LayerInspector({ layer }: { layer: Layer }) {
   const comp = useEditor(activeComp);
   const s = useEditor.getState();
-  const defs = propDefsFor(layer.type);
+  const defs = propDefsFor(layer.type, layer).filter((d) => d.group !== 'effects');
   const parents = comp.layers.filter((l) => l.id !== layer.id && l.type !== 'audio');
   const timeField = (label: string, value: number, onSet: (t: number) => void) => (
     <div className="field">
@@ -104,7 +111,7 @@ function LayerInspector({ layer }: { layer: Layer }) {
               <select value={layer.blendMode} onChange={(e) => s.updateLayer(layer.id, { blendMode: e.target.value as BlendMode })}>
                 {BLEND_MODES.map((m) => (
                   <option key={m} value={m}>
-                    {m[0].toUpperCase() + m.slice(1)}
+                    {BLEND_LABEL(m)}
                   </option>
                 ))}
               </select>
@@ -121,6 +128,15 @@ function LayerInspector({ layer }: { layer: Layer }) {
               </select>
             </div>
           </>
+        )}
+        {(layer.type === 'solid' || layer.type === 'shape' || layer.type === 'null') && (
+          <div className="field">
+            <label>Adjustment</label>
+            <label className="row" style={{ gap: 6 }} title="Effects on an adjustment layer apply to everything below it">
+              <input type="checkbox" checked={!!layer.adjustment} onChange={(e) => s.updateLayer(layer.id, { adjustment: e.target.checked } as Partial<Layer>)} />
+              <span className="hint">effects apply to layers below</span>
+            </label>
+          </div>
         )}
         {timeField('In', layer.inPoint, (t) => s.trimLayer(layer.id, 'in', t))}
         {timeField('Out', layer.outPoint, (t) => s.trimLayer(layer.id, 'out', t))}
@@ -162,6 +178,7 @@ function LayerInspector({ layer }: { layer: Layer }) {
         </div>
       )}
 
+      {layer.type !== 'audio' && <EffectStack layer={layer} />}
       {defs.length > 0 && (
         <div className="section">
           <div className="section-title">Properties</div>

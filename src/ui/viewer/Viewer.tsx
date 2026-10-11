@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { GLRenderer, type SourceProvider } from '../../engine/gl/Renderer';
 import { VideoPool } from '../../engine/media/VideoPool';
 import { mediaEngine } from '../../engine/media/MediaEngine';
+import { effectRegistry } from '../../core/effects/registry';
 import {
   approximateTextMeasure,
   collectVideoItems,
@@ -97,6 +98,13 @@ export function Viewer() {
       if (s.project !== p.project || s.playhead !== p.playhead || s.activeCompId !== p.activeCompId || s.playing !== p.playing || s.previewScale !== p.previewScale) requestDraw();
     });
     const unsubMedia = mediaEngine.subscribe(requestDraw);
+    let lastFx = effectRegistry.version;
+    const unsubFx = effectRegistry.subscribe(() => {
+      // Hot reload: drop compiled programs when plugins change (not on error reports).
+      if (effectRegistry.version !== lastFx) rendererRef.current?.purgeEffects();
+      lastFx = effectRegistry.version;
+      requestDraw();
+    });
     document.fonts?.ready.then(() => {
       rendererRef.current?.text.clear();
       requestDraw();
@@ -110,6 +118,7 @@ export function Viewer() {
     return () => {
       unsubStore();
       unsubMedia();
+      unsubFx();
       document.fonts?.removeEventListener?.('loadingdone', onFonts);
       cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;

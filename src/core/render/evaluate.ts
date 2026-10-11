@@ -4,7 +4,9 @@
  * that the renderer composites through an offscreen target.
  */
 import { evaluateProp } from '../animation/interpolate';
-import type { BlendMode, Color, Composition, Id, Layer, Project, TextAlign, Vec2 } from '../model/types';
+import type { BlendMode, Color, Composition, FrameBlending, Id, Layer, Project, TextAlign, Vec2 } from '../model/types';
+import { effectRegistry, fxPath } from '../effects/registry';
+import { pluginParams } from '../effects/types';
 import { IDENTITY, apply, layerMatrix, multiply, type Mat2D } from './matrix';
 
 export type Rect = [number, number, number, number];
@@ -22,6 +24,18 @@ export interface TextSpec {
   strokeColor: Color;
 }
 
+/** An enabled effect with its parameters evaluated for this frame. */
+export interface EvaluatedEffect {
+  instanceId: Id;
+  pluginId: string;
+  kind: 'effect' | 'transition';
+  /**
+   * Uniform values by param id: scalars, [x, y] (points normalised to 0..1
+   * of the comp), or straight RGBA colours.
+   */
+  params: Record<string, number | number[]>;
+}
+
 interface ItemBase {
   layerId: Id;
   /** Layer space → composition pixel space. */
@@ -30,6 +44,15 @@ interface ItemBase {
   rect: Rect;
   opacity: number;
   blend: BlendMode;
+  /** Enabled effects in stack order (absent when none). */
+  effects?: EvaluatedEffect[];
+  /** Adjustment layer: content is a mask; effects process everything below. */
+  adjustment?: boolean;
+  /** Seconds since the layer's in point / until its out point (transitions). */
+  sinceIn: number;
+  untilOut: number;
+  /** Layer time (for effects that animate on their own clock). */
+  layerTime: number;
 }
 
 export interface ShapeItem extends ItemBase {
@@ -63,6 +86,9 @@ export interface VideoItem extends ItemBase {
   key: string;
   /** Seconds into the source media. */
   sourceTime: number;
+  /** Playback speed of the source (1 = realtime; derivative of time remap). */
+  speed: number;
+  frameBlending: FrameBlending;
 }
 
 export interface PrecompItem extends ItemBase {
@@ -156,6 +182,41 @@ export function textSpecOf(layer: Layer & { type: 'text' }, lt: number): TextSpe
   };
 }
 
+/** Source time for a layer (time remap aware), and the instantaneous source speed. */
+export function sourceTimeOf(layer: Layer, t: number): { time: number; speed: number } {
+  const lt = t - layer.startTime;
+  const remap = layer.timeRemap ? layer.props['time.remap'] : undefined;
+  if (!remap) return { time: lt, speed: 1 };
+  const h = 1 / 240;
+  const a = evaluateProp(remap, lt - h) as number;
+  const b = evaluateProp(remap, lt + h) as number;
+  return { time: evaluateProp(remap, lt) as number, speed: (b - a) / (2 * h) };
+}
+
+/** Evaluate a layer's enabled effects for this frame. */
+export function evaluateEffects(layer: Layer, comp: Composition, lt: number): EvaluatedEffect[] | undefined {
+  const list = layer.effects;
+  if (!list || list.length === 0) return undefined;
+  const out: EvaluatedEffect[] = [];
+  for (const inst of list) {
+    if (!inst.enabled) continue;
+    const reg = effectRegistry.get(inst.pluginId);
+    if (!reg) continue;
+    const params: Record<string, number | number[]> = {};
+    for (const spec of pluginParams(reg.plugin)) {
+      const prop = layer.props[fxPath(inst.id, spec.id)];
+      let v: number | number[];
+      if (prop) v = evaluateProp(prop, lt) as number | number[];
+      else if (spec.type === 'point') v = (spec.default as number[]).slice();
+      else v = Array.isArray(spec.default) ? spec.default.slice() : spec.default;
+      if (spec.type === 'point' && prop) v = [(v as number[])[0] / comp.width, (v as number[])[1] / comp.height];
+      params[spec.id] = v;
+    }
+    out.push({ instanceId: inst.id, pluginId: inst.pluginId, kind: reg.plugin.kind, params });
+  }
+  return out.length ? out : undefined;
+}
+
 /** Build the draw item for one layer, or null if it draws nothing. */
 export function evaluateLayer(
   project: Project,
@@ -166,9 +227,55 @@ export function evaluateLayer(
   depth = 0,
   prefix = '',
 ): RenderItem | null {
+  const item = evaluateContent(project, comp, layer, t, ctx, depth, prefix);
+  const lt = t - layer.startTime;
+  if (layer.adjustment && layer.type !== 'audio') {
+    const effects = evaluateEffects(layer, comp, lt);
+    const base = item ?? {
+      // A null adjustment layer covers the whole frame.
+      layerId: layer.id,
+      kind: 'shape' as const,
+      shape: 'rect' as const,
+      matrix: IDENTITY,
+      rect: [0, 0, comp.width, comp.height] as Rect,
+      size: [comp.width, comp.height] as Vec2,
+      roundness: 0,
+      fill: [1, 1, 1, 1] as Color,
+      strokeWidth: 0,
+      strokeColor: [0, 0, 0, 0] as Color,
+      opacity: Math.min(1, Math.max(0, num(layer, 'transform.opacity', lt, 100) / 100)),
+      blend: layer.blendMode,
+      sinceIn: t - layer.inPoint,
+      untilOut: layer.outPoint - t,
+      layerTime: lt,
+    };
+    return { ...base, adjustment: true, effects };
+  }
+  if (!item) return null;
+  const effects = evaluateEffects(layer, comp, lt);
+  return effects ? { ...item, effects } : item;
+}
+
+function evaluateContent(
+  project: Project,
+  comp: Composition,
+  layer: Layer,
+  t: number,
+  ctx: EvalContext,
+  depth: number,
+  prefix: string,
+): RenderItem | null {
   const lt = t - layer.startTime;
   const opacity = Math.min(1, Math.max(0, num(layer, 'transform.opacity', lt, 100) / 100));
-  const base = { layerId: layer.id, matrix: worldMatrix(comp, layer, t), opacity, blend: layer.blendMode };
+  const base = {
+    layerId: layer.id,
+    matrix: worldMatrix(comp, layer, t),
+    opacity,
+    blend: layer.blendMode,
+    sinceIn: t - layer.inPoint,
+    untilOut: layer.outPoint - t,
+    layerTime: lt,
+  };
   switch (layer.type) {
     case 'solid':
       return {
@@ -211,12 +318,22 @@ export function evaluateLayer(
     case 'video': {
       const m = project.media[layer.mediaId];
       if (!m) return null;
-      return { ...base, kind: 'video', mediaId: m.id, key: prefix + layer.id, sourceTime: lt, rect: [0, 0, m.width, m.height] };
+      const src = sourceTimeOf(layer, t);
+      return {
+        ...base,
+        kind: 'video',
+        mediaId: m.id,
+        key: prefix + layer.id,
+        sourceTime: src.time,
+        speed: src.speed,
+        frameBlending: layer.timeRemap ? (layer.frameBlending ?? 'none') : 'none',
+        rect: [0, 0, m.width, m.height],
+      };
     }
     case 'precomp': {
       const max = ctx.maxDepth ?? 16;
       if (depth >= max) return null;
-      const frame = evaluateComposition(project, layer.compId, lt, ctx, depth + 1, `${prefix}${layer.id}/`);
+      const frame = evaluateComposition(project, layer.compId, sourceTimeOf(layer, t).time, ctx, depth + 1, `${prefix}${layer.id}/`);
       if (!frame) return null;
       return { ...base, kind: 'precomp', frame, rect: [0, 0, frame.width, frame.height] };
     }
@@ -246,7 +363,7 @@ export function evaluateComposition(
   // Bottom of the stack draws first.
   for (let i = layers.length - 1; i >= 0; i--) {
     const item = evaluateLayer(project, comp, layers[i], t, ctx, depth, prefix);
-    if (item && item.opacity > 0) items.push(item);
+    if (item && (item.opacity > 0 || item.effects?.some((e) => e.kind === 'transition'))) items.push(item);
   }
   return { compId, width: comp.width, height: comp.height, background: comp.background, time: t, items };
 }
