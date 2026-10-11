@@ -13,6 +13,7 @@
 import type { EffectClocks, WgslBridge } from '../gl/Renderer';
 import { pluginParams, type EffectPlugin, type ParamSpec } from '../../core/effects/types';
 import { effectRegistry } from '../../core/effects/registry';
+import { getGpuDevice } from './device';
 
 const BUILTINS = ['resolution', 'compSize', 'renderScale', 'time', 'layerTime', 'progress'];
 
@@ -80,10 +81,8 @@ export class WebGpuWgslBridge implements WgslBridge {
   readonly errors = new Map<string, string>();
 
   static async create(): Promise<WebGpuWgslBridge | null> {
-    if (typeof navigator === 'undefined' || !('gpu' in navigator) || typeof OffscreenCanvas === 'undefined') return null;
-    const adapter = await navigator.gpu.requestAdapter().catch(() => null);
-    if (!adapter) return null;
-    const device = await adapter.requestDevice().catch(() => null);
+    if (typeof OffscreenCanvas === 'undefined') return null;
+    const device = await getGpuDevice();
     if (!device) return null;
     const b = new WebGpuWgslBridge();
     b.device = device;

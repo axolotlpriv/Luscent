@@ -16,7 +16,7 @@ export function PropValue({ layer, def }: { layer: Layer; def: PropDef }) {
   const animated = prop.keyframes.length > 0;
   const v = evaluateProp(prop, playhead - layer.startTime);
   const label = `Change ${def.label}`;
-  const decimals = 1;
+  const decimals = def.unit === 's' ? 3 : 1;
 
   if (def.kind === 'number' && def.options) {
     return (

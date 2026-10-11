@@ -1,13 +1,14 @@
 import { LABEL_COLORS } from '../../core/model/factory';
 import { uid } from '../../core/model/ids';
 import { propDefsFor } from '../../core/model/properties';
-import type { BlendMode, Color, Layer, TextLayer } from '../../core/model/types';
+import type { BlendMode, Color, FrameBlending, Layer, TextLayer } from '../../core/model/types';
 import { formatTimecode, parseTimecode } from '../../core/time';
 import { activeComp, editor, useEditor } from '../../state/store';
 import { ColorField, NumberField } from '../components/fields';
 import { KeyNav, PropValue, Stopwatch } from '../components/PropEditor';
 import { EasingPanel } from '../graph/EasingPanel';
 import { EffectStack } from './EffectStack';
+import { RifeInterpolator } from '../../engine/flow/rife';
 
 const BLEND_MODES: BlendMode[] = [
   'normal', 'add', 'screen', 'lighten', 'colorDodge',
@@ -177,6 +178,7 @@ function LayerInspector({ layer }: { layer: Layer }) {
           <button onClick={() => s.openComp(layer.compId, { fromLayer: layer.id })}>Open “{layer.name}”</button>
         </div>
       )}
+      {(layer.type === 'video' || layer.type === 'precomp') && <TimeSection layer={layer} />}
 
       {layer.type !== 'audio' && <EffectStack layer={layer} />}
       {defs.length > 0 && (
@@ -368,4 +370,90 @@ function markBeats(every: number) {
     }
     c.markers.sort((a, b) => a.time - b.time);
   });
+}
+
+function TimeSection({ layer }: { layer: Layer }) {
+  const s = useEditor.getState();
+  const project = useEditor((st) => st.project);
+  const media = 'mediaId' in layer ? project.media[layer.mediaId] : undefined;
+  const speeds = [0.1, 0.25, 0.5, 2, 4];
+  return (
+    <div className="section">
+      <div className="section-title">Time · speed & slow-mo</div>
+      <div className="field">
+        <label>Time Remap</label>
+        <label className="row" style={{ gap: 6 }}>
+          <input type="checkbox" checked={!!layer.timeRemap} onChange={(e) => s.setTimeRemap(layer.id, e.target.checked)} />
+          <span className="hint">keyframe “Time Remap” for speed ramps</span>
+        </label>
+      </div>
+      {layer.type === 'video' && (
+        <div className="field">
+          <label>Frame Blending</label>
+          <select value={layer.frameBlending ?? 'none'} onChange={(e) => s.setFrameBlending(layer.id, e.target.value as FrameBlending)}>
+            <option value="none">Off (nearest frame)</option>
+            <option value="blend">Frame Mix</option>
+            <option value="optical-flow">Optical Flow (Twixtor-style)</option>
+          </select>
+        </div>
+      )}
+      {layer.type === 'video' && layer.frameBlending === 'optical-flow' && <FlowEngineField />}
+      <div className="row wrap" style={{ gap: 4 }}>
+        {speeds.map((sp) => (
+          <button key={sp} className="icon" onClick={() => s.setLayerSpeed(layer.id, sp)} title={sp < 1 ? `${Math.round(1 / sp)}× slow motion` : `${sp}× speed`}>
+            {sp * 100}%
+          </button>
+        ))}
+        <button className="icon" onClick={() => s.freezeFrameAtPlayhead(layer.id)} title="Hold the current frame from the playhead on">
+          Freeze
+        </button>
+        <button className="icon" onClick={() => s.reverseLayer(layer.id)}>
+          Reverse
+        </button>
+      </div>
+      {media && layer.type === 'video' && <div className="hint" style={{ marginTop: 4 }}>Source: {media.fps ? `${media.fps} fps` : 'frame rate unknown (assuming 30)'}</div>}
+    </div>
+  );
+}
+
+function FlowEngineField() {
+  const engine = useEditor((st) => st.flowEngine);
+  const s = useEditor.getState();
+  return (
+    <div className="field">
+      <label>Flow engine</label>
+      <div className="row" style={{ gap: 4 }}>
+        <select
+          value={engine}
+          onChange={async (e) => {
+            const v = e.target.value as 'farneback' | 'rife';
+            if (v === 'rife' && !(await RifeInterpolator.hasStoredModel())) {
+              s.toast('Load a RIFE .onnx model first (button next to this menu).', 'info');
+              return;
+            }
+            s.set('flowEngine', v);
+          }}
+        >
+          <option value="farneback">Farnebäck (WebGPU / CPU)</option>
+          <option value="rife">RIFE (ONNX, experimental)</option>
+        </select>
+        <label className="icon" style={{ cursor: 'pointer' }} title="Load a RIFE ONNX model (kept in this browser)">
+          ⇧ Model
+          <input
+            type="file"
+            accept=".onnx"
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (!f) return;
+              await RifeInterpolator.storeModel(f);
+              s.set('flowEngine', 'rife');
+              s.toast(`Loaded ${f.name}`, 'success');
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
 }

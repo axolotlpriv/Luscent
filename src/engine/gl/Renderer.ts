@@ -15,7 +15,7 @@
  * cached textures; video frames are uploaded per frame; precomps recurse.
  * Everything is premultiplied alpha.
  */
-import type { CompFrame, EvaluatedEffect, RenderItem } from '../../core/render/evaluate';
+import type { CompFrame, EvaluatedEffect, RenderItem, VideoItem } from '../../core/render/evaluate';
 import { maxScale, multiply, type Mat2D } from '../../core/render/matrix';
 import type { BlendMode, Id } from '../../core/model/types';
 import { effectRegistry } from '../../core/effects/registry';
@@ -28,7 +28,7 @@ export interface SourceProvider {
   /** Decoded still for an image media item. */
   image(mediaId: Id): TexImageSource | null;
   /** Current frame for a video instance (already seeked by the media engine). */
-  video(key: string, mediaId: Id): TexImageSource | null;
+  video(key: string, mediaId: Id, item?: VideoItem): TexImageSource | null;
 }
 
 export interface RenderOptions {
@@ -492,7 +492,7 @@ export class GLRenderer {
         break;
       }
       case 'video': {
-        const src = sources.video(item.key, item.mediaId);
+        const src = sources.video(item.key, item.mediaId, item);
         if (!src) return;
         tex = this.videoTexture(item.key, src);
         break;

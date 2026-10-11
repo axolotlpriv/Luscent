@@ -25,6 +25,7 @@ import {
 import { uid } from '../core/model/ids';
 import { getPropDef } from '../core/model/properties';
 import type {
+  FrameBlending,
   TemporalEase,
   AnimProp,
   AudioAnalysis,
@@ -58,6 +59,7 @@ import type { Bezier } from '../core/animation/easings';
 import {
   deleteLayers,
   duplicateLayers,
+  sourceDurationOf,
   extractRange,
   makeEditContext,
   moveLayers,
@@ -72,6 +74,7 @@ import {
 } from '../core/timeline/ops';
 import { isLayerActive } from '../core/render/evaluate';
 import { compContains, precompose } from '../core/timeline/precompose';
+import { disableTimeRemap, enableTimeRemap, freezeFrame, reverseLayer, setConstantSpeed } from '../core/timeline/timeRemap';
 import { clamp, quantize } from '../core/time';
 import { mediaEngine } from '../engine/media/MediaEngine';
 import { defaultParamProp, effectRegistry, fxPath, instantiateEffect } from '../core/effects/registry';
@@ -118,6 +121,8 @@ export interface EditorState {
   /** Timeline shows the graph editor instead of layer bars. */
   graphMode: boolean;
   graphType: 'value' | 'speed';
+  /** Optical-flow interpolation model. */
+  flowEngine: 'farneback' | 'rife';
   /** Preview resolution factor; 0 = automatic (matches viewer zoom). */
   previewScale: number;
   safeZones: boolean;
@@ -156,6 +161,7 @@ function initialState(project: Project): Omit<EditorState, keyof Actions> {
     ripple: false,
     graphMode: false,
     graphType: 'value',
+    flowEngine: 'farneback',
     previewScale: 0,
     safeZones: false,
     toasts: [],
@@ -234,6 +240,12 @@ export interface Actions {
   applyEasingToSelected(easing: string | Bezier): void;
   setKeyEase(layerId: Id, path: PropPath, keyId: Id, side: 'in' | 'out', ease: Partial<TemporalEase>): void;
   bakeSelectedKeys(): void;
+  // time remap
+  setTimeRemap(layerId: Id, on: boolean): void;
+  setFrameBlending(layerId: Id, mode: FrameBlending): void;
+  setLayerSpeed(layerId: Id, speed: number): void;
+  freezeFrameAtPlayhead(layerId: Id): void;
+  reverseLayer(layerId: Id): void;
   // effects
   addEffect(layerId: Id, pluginId: string): void;
   removeEffect(layerId: Id, instanceId: Id): void;
@@ -864,6 +876,49 @@ export const useEditor = create<Store>()((set, get) => {
       const prop = l?.props[path];
       if (!prop) return;
       editProps('Edit Ease', [{ layerId, path, prop: setKeyEase(prop, keyId, side, ease) }]);
+    },
+    setTimeRemap(layerId, on) {
+      editComp(on ? 'Enable Time Remap' : 'Disable Time Remap', (c) => {
+        const l = c.layers.find((x) => x.id === layerId) as Layer | undefined;
+        if (!l || (l.type !== 'video' && l.type !== 'precomp')) return;
+        if (on) enableTimeRemap(l);
+        else disableTimeRemap(l);
+      });
+      if (on) set({ expanded: { ...get().expanded, [layerId]: true } });
+    },
+    setFrameBlending(layerId, mode) {
+      editComp('Frame Blending', (c) => {
+        const l = c.layers.find((x) => x.id === layerId) as Layer | undefined;
+        if (!l) return;
+        if (!l.timeRemap) enableTimeRemap(l);
+        l.frameBlending = mode;
+      });
+    },
+    setLayerSpeed(layerId, speed) {
+      const s = get();
+      const comp = activeComp(s);
+      const layer = comp.layers.find((x) => x.id === layerId);
+      if (!layer) return;
+      const dur = sourceDurationOf(layer, s.project.media);
+      editComp(`Speed ${Math.round(speed * 100)}%`, (c) => {
+        const l = c.layers.find((x) => x.id === layerId) as Layer | undefined;
+        if (!l) return;
+        setConstantSpeed(l, speed, Number.isFinite(dur) ? dur : l.outPoint - l.startTime);
+        if (speed < 1 && (l.frameBlending ?? 'none') === 'none' && l.type === 'video') l.frameBlending = 'optical-flow';
+      });
+    },
+    freezeFrameAtPlayhead(layerId) {
+      const t = q(get().playhead);
+      editComp('Freeze Frame', (c) => {
+        const l = c.layers.find((x) => x.id === layerId) as Layer | undefined;
+        if (l) freezeFrame(l, t);
+      });
+    },
+    reverseLayer(layerId) {
+      editComp('Reverse Layer', (c) => {
+        const l = c.layers.find((x) => x.id === layerId) as Layer | undefined;
+        if (l) reverseLayer(l);
+      });
     },
     addEffect(layerId, pluginId) {
       const reg = effectRegistry.get(pluginId);

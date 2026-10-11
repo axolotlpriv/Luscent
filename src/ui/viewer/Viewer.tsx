@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GLRenderer, type SourceProvider } from '../../engine/gl/Renderer';
 import { VideoPool } from '../../engine/media/VideoPool';
+import { FrameSource } from '../../engine/media/FrameSource';
+import { FrameInterpolator } from '../../engine/flow/FrameInterpolator';
 import { mediaEngine } from '../../engine/media/MediaEngine';
 import { effectRegistry } from '../../core/effects/registry';
 import { getWgslBridge } from '../../engine/plugins/pluginStore';
@@ -29,6 +31,7 @@ export function Viewer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<GLRenderer | null>(null);
   const poolRef = useRef<VideoPool | null>(null);
+  const interpRef = useRef<FrameInterpolator | null>(null);
   const frameRef = useRef<CompFrame | null>(null);
   const rafRef = useRef(0);
   const [stage, setStage] = useState({ w: 800, h: 600 });
@@ -62,12 +65,21 @@ export function Viewer() {
     frameRef.current = frame;
     const videos = collectVideoItems(frame);
     pool.sync(
-      videos.map((v) => ({ key: v.key, mediaId: v.mediaId, time: v.sourceTime })),
+      videos.map((v) => ({ key: v.key, mediaId: v.mediaId, time: v.sourceTime, speed: v.speed })),
       s.playing,
     );
+    const interp = interpRef.current;
+    if (interp && interp.engine !== s.flowEngine) interp.engine = s.flowEngine;
     const sources: SourceProvider = {
       image: (id) => mediaEngine.image(id),
-      video: (key) => pool.frame(key),
+      video: (key, mediaId, item) => {
+        if (item && item.frameBlending !== 'none' && interp) {
+          const fps = s.project.media[mediaId]?.fps || 30;
+          const f = interp.get(mediaId, item.sourceTime, fps, item.frameBlending);
+          if (f) return f;
+        }
+        return pool.frame(key);
+      },
     };
     r.render(frame, sources, { scale: scaleRef.current });
     r.retainVideo(new Set(videos.map((v) => v.key)));
@@ -95,6 +107,12 @@ export function Viewer() {
       return;
     }
     poolRef.current = new VideoPool(mediaEngine, requestDraw);
+    const frames = new FrameSource(mediaEngine);
+    interpRef.current = new FrameInterpolator(frames, requestDraw);
+    interpRef.current.onError = (msg) => {
+      editor().toast(msg, 'error');
+      editor().set('flowEngine', 'farneback');
+    };
     void getWgslBridge().then((b) => {
       if (b && rendererRef.current) {
         rendererRef.current.wgsl = b;
@@ -102,7 +120,7 @@ export function Viewer() {
       }
     });
     const unsubStore = useEditor.subscribe((s, p) => {
-      if (s.project !== p.project || s.playhead !== p.playhead || s.activeCompId !== p.activeCompId || s.playing !== p.playing || s.previewScale !== p.previewScale) requestDraw();
+      if (s.project !== p.project || s.playhead !== p.playhead || s.activeCompId !== p.activeCompId || s.playing !== p.playing || s.previewScale !== p.previewScale || s.flowEngine !== p.flowEngine) requestDraw();
     });
     const unsubMedia = mediaEngine.subscribe(requestDraw);
     let lastFx = effectRegistry.version;
@@ -130,6 +148,8 @@ export function Viewer() {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
       poolRef.current?.disposeAll();
+      interpRef.current?.dispose();
+      frames.dispose();
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };

@@ -8,6 +8,9 @@ import { seedDemo } from './demo';
 import { registerBuiltinEffects } from './effects';
 import { pluginStore } from './engine/plugins/pluginStore';
 import { effectRegistry } from './core/effects/registry';
+import { GpuFarneback } from './engine/flow/gpuFarneback';
+import { farnebackFlow } from './core/flow/farneback';
+import { getGpuDevice } from './engine/gpu/device';
 import './ui/styles/app.css';
 
 registerBuiltinEffects();
@@ -25,7 +28,13 @@ async function boot() {
     </StrictMode>,
   );
   // Expose for debugging and automated smoke tests.
-  (window as unknown as { luscent: unknown }).luscent = { editor, effects: effectRegistry, plugins: pluginStore };
+  (window as unknown as { luscent: unknown }).luscent = {
+    editor,
+    effects: effectRegistry,
+    plugins: pluginStore,
+    // Engine internals for automated tests and debugging.
+    debug: { GpuFarneback, farnebackFlow, getGpuDevice },
+  };
 }
 
 void boot();

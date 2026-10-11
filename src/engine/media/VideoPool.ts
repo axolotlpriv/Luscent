@@ -17,6 +17,8 @@ export interface VideoRequest {
   mediaId: Id;
   /** Seconds into the source. */
   time: number;
+  /** Source playback speed (time remap derivative); 1 = realtime. */
+  speed?: number;
 }
 
 interface Slot {
@@ -94,18 +96,21 @@ export class VideoPool {
       const el = slot.el;
       const dur = Number.isFinite(el.duration) ? el.duration : Infinity;
       const t = Math.min(Math.max(0, r.time), Math.max(0, dur - 0.001));
-      if (playing) {
+      const speed = r.speed ?? 1;
+      // Very slow, frozen or reversed sources can't free-run: seek per frame.
+      const freeRun = speed >= 0.0625 && speed <= 16;
+      if (playing && freeRun) {
         if (el.paused) {
           if (Math.abs(el.currentTime - t) > SEEK_TOLERANCE) el.currentTime = t;
           el.play().catch(() => undefined);
         } else {
           const drift = el.currentTime - t;
-          if (Math.abs(drift) > PLAY_DRIFT_HARD) {
+          if (Math.abs(drift) > PLAY_DRIFT_HARD * Math.max(1, speed)) {
             el.currentTime = t;
-            el.playbackRate = 1;
+            el.playbackRate = speed;
           } else {
             // Gently steer instead of hard seeking (avoids visible hitches).
-            el.playbackRate = 1 - Math.max(-0.08, Math.min(0.08, drift * 2));
+            el.playbackRate = Math.max(0.0625, speed * (1 - Math.max(-0.08, Math.min(0.08, drift * 2))));
           }
         }
       } else {

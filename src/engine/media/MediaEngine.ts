@@ -8,6 +8,7 @@ import type { AudioAnalysis, Id, MediaItem, MediaKind } from '../../core/model/t
 import type { Peaks } from '../../core/audio/waveform';
 import type { AnalysisRequest, AnalysisResponse } from '../../workers/audioAnalysis.worker';
 import { getAudioContext } from './audioContext';
+import { measureFps } from './FrameSource';
 
 export type MediaStatus = 'loading' | 'ready' | 'error' | 'missing';
 
@@ -183,6 +184,9 @@ export class MediaEngine {
         item.width = el.videoWidth;
         item.height = el.videoHeight;
         item.duration = Number.isFinite(el.duration) ? el.duration : 10;
+        el.preload = 'auto';
+        el.currentTime = 0;
+        item.fps = await measureFps(el).catch(() => 30);
         el.removeAttribute('src');
         el.load();
         const buf = await this.decodeAudio(file);
