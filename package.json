@@ -1,6 +1,7 @@
 {
   "name": "luscent",
   "private": true,
+  "license": "AGPL-3.0-only",
   "version": "0.1.0",
   "description": "Luscent — a browser-based motion editor for fast, punchy short-form edits.",
   "type": "module",

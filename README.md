@@ -98,3 +98,13 @@ docs/          architecture, roadmap, plugin and preset formats
 `core/` holds the logic and most of the unit tests. It never touches the DOM. More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Third-party material is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+Copyright (C) 2026 the Luscent contributors.
+
+Luscent is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. See [LICENSE](LICENSE).
+
+The AGPL also covers network use. If you run a modified version of Luscent where other people can use it, you must offer them the source code of that version.
+
+Bundled third-party material keeps its own licenses (MIT and BSD). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
