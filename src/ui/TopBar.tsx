@@ -6,9 +6,10 @@ interface Props {
   onSave: () => void;
   onImport: () => void;
   onHelp: () => void;
+  onPlugins: () => void;
 }
 
-export function TopBar({ onNew, onOpen, onSave, onImport, onHelp }: Props) {
+export function TopBar({ onNew, onOpen, onSave, onImport, onHelp, onPlugins }: Props) {
   const name = useEditor((s) => s.project.name);
   const canUndo = useEditor((s) => s.canUndo);
   const canRedo = useEditor((s) => s.canRedo);
@@ -54,7 +55,9 @@ export function TopBar({ onNew, onOpen, onSave, onImport, onHelp }: Props) {
         ↷
       </button>
       <span className="spacer" />
-      <span className="hint">Phase 1 · timeline · keyframes · preview</span>
+      <button className="ghost" onClick={onPlugins} title="Effects library, plugin install and Shader Lab">
+        ✦ Plugins
+      </button>
       <button className="ghost" onClick={onHelp} title="Keyboard shortcuts (?)">
         ⌨ Shortcuts
       </button>

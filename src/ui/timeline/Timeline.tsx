@@ -11,6 +11,7 @@ import { Ruler, tickStep } from './Ruler';
 import { makeSnapper, startDrag } from './drag';
 import { LAYER_H, LEFT_W, PROP_H, useTimelineUI } from './uiState';
 import { GraphEditor } from '../graph/GraphEditor';
+import { useEffectRegistry } from '../panels/EffectStack';
 
 type Row = { kind: 'layer'; layer: Layer; index: number } | { kind: 'prop'; layer: Layer; def: PropDef };
 
@@ -27,6 +28,7 @@ export function Timeline() {
   const trackWidth = useTimelineUI((s) => s.trackWidth);
   const dropIndex = useTimelineUI((s) => s.dropIndex);
   const graphMode = useEditor((s) => s.graphMode);
+  const fxVersion = useEffectRegistry();
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -47,7 +49,8 @@ export function Timeline() {
       for (const def of shown) if (layer.props[def.path]) out.push({ kind: 'prop', layer, def });
     });
     return out;
-  }, [comp.layers, expanded, reveal, selectedLayers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comp.layers, expanded, reveal, selectedLayers, fxVersion]);
 
   const keysByProp = useMemo(() => {
     const m = new Map<string, string[]>();

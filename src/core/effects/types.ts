@@ -40,6 +40,12 @@ export interface PassSpec {
   scale?: number;
   /** GLSL ES 3.00 fragment code defining `vec4 effect(vec2 uv)`. */
   glsl: string;
+  /**
+   * Helper library to include: "full" (default: hash, noise, luma, blur1D…)
+   * or "minimal" (only `lsc_`-prefixed helpers, for ported shaders whose own
+   * function names might collide).
+   */
+  prelude?: 'full' | 'minimal';
 }
 
 export type PluginKind = 'effect' | 'transition';

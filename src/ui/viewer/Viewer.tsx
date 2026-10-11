@@ -3,6 +3,7 @@ import { GLRenderer, type SourceProvider } from '../../engine/gl/Renderer';
 import { VideoPool } from '../../engine/media/VideoPool';
 import { mediaEngine } from '../../engine/media/MediaEngine';
 import { effectRegistry } from '../../core/effects/registry';
+import { getWgslBridge } from '../../engine/plugins/pluginStore';
 import {
   approximateTextMeasure,
   collectVideoItems,
@@ -94,6 +95,12 @@ export function Viewer() {
       return;
     }
     poolRef.current = new VideoPool(mediaEngine, requestDraw);
+    void getWgslBridge().then((b) => {
+      if (b && rendererRef.current) {
+        rendererRef.current.wgsl = b;
+        requestDraw();
+      }
+    });
     const unsubStore = useEditor.subscribe((s, p) => {
       if (s.project !== p.project || s.playhead !== p.playhead || s.activeCompId !== p.activeCompId || s.playing !== p.playing || s.previewScale !== p.previewScale) requestDraw();
     });

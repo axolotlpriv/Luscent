@@ -12,9 +12,7 @@
 import type { EffectPlugin, ParamSpec, PassSpec } from '../../core/effects/types';
 import { pluginParams } from '../../core/effects/types';
 
-export const EFFECT_PRELUDE = /* glsl */ `
-#define PI 3.141592653589793
-#define TAU 6.283185307179586
+export const EFFECT_UNIFORMS = /* glsl */ `
 uniform vec2 resolution;   // output size in device pixels
 uniform vec2 compSize;     // composition size in comp pixels
 uniform float renderScale; // device pixels per comp pixel
@@ -22,6 +20,13 @@ uniform float time;        // composition time (s)
 uniform float layerTime;   // layer time (s)
 uniform float progress;    // transitions: 0 → 1
 uniform float seed;
+vec4 lsc_unpremultiply(vec4 c) { return c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0); }
+vec4 lsc_premultiply(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+`;
+
+export const EFFECT_PRELUDE = /* glsl */ `
+#define PI 3.141592653589793
+#define TAU 6.283185307179586
 vec2 compPx() { return 1.0 / compSize; }
 float hash11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -97,7 +102,8 @@ in vec2 vUV;
 out vec4 fragColor;
 ${samplers}
 ${params}
-${EFFECT_PRELUDE}
+${EFFECT_UNIFORMS}
+${pass.prelude === 'minimal' ? '' : EFFECT_PRELUDE}
 #line 1
 ${pass.glsl}
 void main() { fragColor = effect(vUV); }
