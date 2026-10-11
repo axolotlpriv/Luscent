@@ -25,11 +25,13 @@ import {
 import { uid } from '../core/model/ids';
 import { getPropDef } from '../core/model/properties';
 import type {
+  TemporalEase,
   AnimProp,
   AudioAnalysis,
   Composition,
   Id,
   Interpolation,
+  Keyframe,
   Layer,
   Marker,
   Project,
@@ -46,8 +48,13 @@ import {
   setInterpolation,
   setValueAt,
   toggleAnimation,
+  applyEasing,
+  bakeSegments,
+  setKeyEase,
+  makeKeyframe,
   type EaseSide,
 } from '../core/animation/keyframes';
+import type { Bezier } from '../core/animation/easings';
 import {
   deleteLayers,
   duplicateLayers,
@@ -106,6 +113,9 @@ export interface EditorState {
   beatSnap: boolean;
   /** Trims and deletes ripple downstream layers by default (Alt inverts). */
   ripple: boolean;
+  /** Timeline shows the graph editor instead of layer bars. */
+  graphMode: boolean;
+  graphType: 'value' | 'speed';
   /** Preview resolution factor; 0 = automatic (matches viewer zoom). */
   previewScale: number;
   safeZones: boolean;
@@ -121,6 +131,8 @@ export interface EditorState {
 
 const history = new History<Project>(300);
 let clipboard: { layers: Layer[]; fromComp: Id } | null = null;
+/** Copied keyframes: per property path, times relative to the earliest key. */
+let keyClipboard: Array<{ path: PropPath; keys: Keyframe[] }> | null = null;
 let toastSeq = 0;
 
 function initialState(project: Project): Omit<EditorState, keyof Actions> {
@@ -140,6 +152,8 @@ function initialState(project: Project): Omit<EditorState, keyof Actions> {
     snapping: true,
     beatSnap: true,
     ripple: false,
+    graphMode: false,
+    graphType: 'value',
     previewScale: 0,
     safeZones: false,
     toasts: [],
@@ -214,6 +228,10 @@ export interface Actions {
   deleteSelectedKeys(): void;
   easeSelectedKeys(side?: EaseSide): void;
   setSelectedKeysInterpolation(interp: Interpolation): void;
+  /** Apply an easing preset id or raw bezier to the selected keyframes. */
+  applyEasingToSelected(easing: string | Bezier): void;
+  setKeyEase(layerId: Id, path: PropPath, keyId: Id, side: 'in' | 'out', ease: Partial<TemporalEase>): void;
+  bakeSelectedKeys(): void;
   // markers & work area
   addMarker(t?: number): void;
   updateMarker(id: Id, patch: Partial<Marker>): void;
@@ -667,14 +685,56 @@ export const useEditor = create<Store>()((set, get) => {
     copy() {
       const s = get();
       const comp = activeComp(s);
+      const groups = selectedKeyGroups();
+      if (groups.length) {
+        let t0 = Infinity;
+        for (const g of groups) for (const k of g.layer.props[g.path].keyframes) if (g.ids.has(k.id)) t0 = Math.min(t0, k.time);
+        keyClipboard = groups.map((g) => ({
+          path: g.path,
+          keys: g.layer.props[g.path].keyframes.filter((k) => g.ids.has(k.id)).map((k) => ({ ...deepClone(k), time: k.time - t0 })),
+        }));
+        clipboard = null;
+        const n = keyClipboard.reduce((a, g) => a + g.keys.length, 0);
+        return get().toast(`Copied ${n} keyframe${n > 1 ? 's' : ''}`);
+      }
       const ids = new Set(selectedOrAll());
       const layers = comp.layers.filter((l) => ids.has(l.id));
       if (layers.length) {
         clipboard = { layers: layers.map((l) => deepClone(l)), fromComp: comp.id };
+        keyClipboard = null;
         get().toast(`Copied ${layers.length} layer${layers.length > 1 ? 's' : ''}`);
       }
     },
     paste() {
+      if (keyClipboard) {
+        const s = get();
+        const comp = activeComp(s);
+        const targets = comp.layers.filter((l) => s.selectedLayers.includes(l.id));
+        if (!targets.length) return get().toast('Select a layer to paste keyframes onto.', 'info');
+        const changes: Array<{ layerId: Id; path: PropPath; prop: AnimProp }> = [];
+        const pasted: KeySel[] = [];
+        for (const l of targets) {
+          const lt = q(s.playhead) - l.startTime;
+          for (const g of keyClipboard) {
+            const prop = l.props[g.path];
+            if (!prop) continue;
+            let next: AnimProp = prop.keyframes.length ? prop : { ...prop, keyframes: [] };
+            for (const k of g.keys) {
+              const t = lt + k.time;
+              const nk = { ...makeKeyframe(t, k.value), inInterp: k.inInterp, outInterp: k.outInterp, inEase: { ...k.inEase }, outEase: { ...k.outEase }, outCurve: k.outCurve };
+              if (!nk.outCurve) delete nk.outCurve;
+              const kept = next.keyframes.filter((x) => Math.abs(x.time - t) > 0.5 / comp.fps);
+              next = { ...next, keyframes: [...kept, nk].sort((a, b) => a.time - b.time) };
+              pasted.push({ layerId: l.id, path: g.path, keyId: nk.id });
+            }
+            changes.push({ layerId: l.id, path: g.path, prop: next });
+          }
+        }
+        if (!changes.length) return get().toast('The selected layer has none of the copied properties.', 'info');
+        editProps('Paste Keyframes', changes);
+        get().selectKeys(pasted);
+        return;
+      }
       if (!clipboard) return;
       const s = get();
       const comp = activeComp(s);
@@ -778,6 +838,22 @@ export const useEditor = create<Store>()((set, get) => {
         prop: setInterpolation(g.layer.props[g.path], g.ids, interp),
       }));
       editProps(`Keyframes → ${interp}`, changes);
+    },
+    applyEasingToSelected(easing) {
+      const changes = selectedKeyGroups().map((g) => ({ layerId: g.layer.id, path: g.path, prop: applyEasing(g.layer.props[g.path], g.ids, easing) }));
+      editProps(typeof easing === 'string' ? `Ease → ${easing}` : 'Apply Curve', changes);
+    },
+    setKeyEase(layerId, path, keyId, side, ease) {
+      const l = activeComp(get()).layers.find((x) => x.id === layerId);
+      const prop = l?.props[path];
+      if (!prop) return;
+      editProps('Edit Ease', [{ layerId, path, prop: setKeyEase(prop, keyId, side, ease) }]);
+    },
+    bakeSelectedKeys() {
+      const fps = activeComp(get()).fps;
+      const changes = selectedKeyGroups().map((g) => ({ layerId: g.layer.id, path: g.path, prop: bakeSegments(g.layer.props[g.path], g.ids, 1 / fps) }));
+      editProps('Bake Keyframes', changes);
+      set({ selectedKeys: {} });
     },
 
     // ---------------------------------------------------------------- markers

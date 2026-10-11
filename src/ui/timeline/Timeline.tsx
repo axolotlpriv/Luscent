@@ -10,6 +10,7 @@ import { PropRow } from './PropRow';
 import { Ruler, tickStep } from './Ruler';
 import { makeSnapper, startDrag } from './drag';
 import { LAYER_H, LEFT_W, PROP_H, useTimelineUI } from './uiState';
+import { GraphEditor } from '../graph/GraphEditor';
 
 type Row = { kind: 'layer'; layer: Layer; index: number } | { kind: 'prop'; layer: Layer; def: PropDef };
 
@@ -25,6 +26,7 @@ export function Timeline() {
   const scrollTime = useEditor((s) => s.scrollTime);
   const trackWidth = useTimelineUI((s) => s.trackWidth);
   const dropIndex = useTimelineUI((s) => s.dropIndex);
+  const graphMode = useEditor((s) => s.graphMode);
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -239,6 +241,11 @@ export function Timeline() {
             <Marquee />
           </div>
         </div>
+        {graphMode && (
+          <div className="graph-overlay" style={{ left: LEFT_W, top: 30 }}>
+            <GraphEditor />
+          </div>
+        )}
         <PlayheadOverlay />
       </div>
       {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
@@ -326,6 +333,8 @@ function TimelineToolbar({ fitAll, compStack, names }: { fitAll: () => void; com
   const ripple = useEditor((s) => s.ripple);
   const pxPerSec = useEditor((s) => s.pxPerSec);
   const project = useEditor((s) => s.project);
+  const graphMode = useEditor((s) => s.graphMode);
+  const graphType = useEditor((s) => s.graphType);
   const bpm = useMemo(() => {
     for (const l of comp.layers) {
       if (l.type === 'audio' || l.type === 'video') {
@@ -374,6 +383,20 @@ function TimelineToolbar({ fitAll, compStack, names }: { fitAll: () => void; com
       <button className="icon" title="Add marker (M)" onClick={() => s.addMarker()}>
         ⚑
       </button>
+      <span className="sep" style={{ width: 1, height: 18, background: 'var(--line-2)' }} />
+      <button className={'icon' + (graphMode ? ' on' : '')} title="Graph editor (⇧F3)" onClick={() => s.set('graphMode', !graphMode)}>
+        ⤳ Graph
+      </button>
+      {graphMode && (
+        <div className="seg">
+          <button className={'icon' + (graphType === 'value' ? ' on' : '')} onClick={() => s.set('graphType', 'value')} title="Value graph">
+            Value
+          </button>
+          <button className={'icon' + (graphType === 'speed' ? ' on' : '')} onClick={() => s.set('graphType', 'speed')} title="Speed graph">
+            Speed
+          </button>
+        </div>
+      )}
       <span className="grow" />
       {bpm && (
         <span className="badge beat" title="Detected tempo of the first analysed track">

@@ -29,6 +29,8 @@ export const SHORTCUTS: ShortcutDoc[] = [
   { keys: '⌘Z / ⌘⇧Z', label: 'Undo / redo' },
   { keys: 'F9', label: 'Easy ease (⇧ in, ⌘⇧ out)' },
   { keys: '⌘⌥H', label: 'Hold keyframes' },
+  { keys: '⇧F3', label: 'Toggle graph editor' },
+  { keys: '⌘C / ⌘V (keys)', label: 'Copy / paste keyframes onto the selected layer' },
   { keys: 'P S R T A', label: 'Reveal position / scale / rotation / opacity / anchor' },
   { keys: 'L', label: 'Reveal volume' },
   { keys: 'U', label: 'Reveal animated properties' },
@@ -125,6 +127,9 @@ export function useShortcuts(h: ShortcutHandlers): void {
           return handled();
         case 'F9':
           return handled(), s.easeSelectedKeys(e.shiftKey ? 'in' : 'both');
+        case 'F3':
+          if (e.shiftKey) return handled(), s.set('graphMode', !s.graphMode);
+          return;
         case '[':
           return handled(), s.alignSelectedToPlayhead('in');
         case ']':

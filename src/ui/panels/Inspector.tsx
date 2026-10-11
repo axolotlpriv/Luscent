@@ -6,6 +6,7 @@ import { formatTimecode, parseTimecode } from '../../core/time';
 import { activeComp, editor, useEditor } from '../../state/store';
 import { ColorField, NumberField } from '../components/fields';
 import { KeyNav, PropValue, Stopwatch } from '../components/PropEditor';
+import { EasingPanel } from '../graph/EasingPanel';
 
 const BLEND_MODES: BlendMode[] = ['normal', 'add', 'screen', 'multiply', 'lighten'];
 const FONTS = [
@@ -40,24 +41,7 @@ export function Inspector() {
 }
 
 function KeyframeTools() {
-  const s = useEditor.getState();
-  return (
-    <div className="section">
-      <div className="section-title">Keyframe interpolation</div>
-      <div className="row wrap">
-        <button onClick={() => s.easeSelectedKeys('both')} title="F9">
-          Easy Ease
-        </button>
-        <button onClick={() => s.easeSelectedKeys('in')}>Ease In</button>
-        <button onClick={() => s.easeSelectedKeys('out')}>Ease Out</button>
-        <button onClick={() => s.setSelectedKeysInterpolation('linear')}>Linear</button>
-        <button onClick={() => s.setSelectedKeysInterpolation('hold')}>Hold</button>
-      </div>
-      <div className="hint" style={{ marginTop: 6 }}>
-        Curve editing with bezier handles and easing presets arrives with the graph editor (phase 2).
-      </div>
-    </div>
-  );
+  return <EasingPanel />;
 }
 
 function LayerInspector({ layer }: { layer: Layer }) {

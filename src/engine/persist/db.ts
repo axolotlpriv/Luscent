@@ -3,8 +3,9 @@
  * a refresh restores the full session without re-importing files.
  */
 const DB_NAME = 'luscent';
-const DB_VERSION = 1;
-const STORES = ['projects', 'media'] as const;
+/** v2 adds user libraries: curves, effect plugins and presets. */
+const DB_VERSION = 2;
+const STORES = ['projects', 'media', 'library', 'plugins', 'presets'] as const;
 type StoreName = (typeof STORES)[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -39,4 +40,5 @@ export const idb = {
   put: (store: StoreName, key: string, value: unknown) => tx(store, 'readwrite', (s) => s.put(value, key)),
   del: (store: StoreName, key: string) => tx(store, 'readwrite', (s) => s.delete(key)),
   keys: (store: StoreName) => tx<IDBValidKey[]>(store, 'readonly', (s) => s.getAllKeys()),
+  all: <T>(store: StoreName) => tx<T[]>(store, 'readonly', (s) => s.getAll() as IDBRequest<T[]>),
 };

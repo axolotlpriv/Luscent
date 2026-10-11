@@ -1,4 +1,6 @@
 import { cubicBezierAt } from './bezier';
+import { curveFn } from './easings';
+import { applyWiggle } from './noise';
 import type { AnimProp, Keyframe, PropValue, TemporalEase } from '../model/types';
 
 export function isAnimated(prop: AnimProp): boolean {
@@ -41,6 +43,8 @@ export interface SegmentCurve {
   /** CSS-style normalised cubic bezier control points; null for linear/hold. */
   bezier: [number, number, number, number] | null;
   hold: boolean;
+  /** Function curve (elastic, bounce…) when the segment uses one. */
+  fn?: (x: number) => number;
 }
 
 const clampInfluence = (i: number) => Math.min(1, Math.max(0.001, i));
@@ -56,6 +60,10 @@ const clampInfluence = (i: number) => Math.min(1, Math.max(0.001, i));
  */
 export function segmentCurve(k0: Keyframe, k1: Keyframe): SegmentCurve {
   if (k0.outInterp === 'hold') return { bezier: null, hold: true };
+  if (k0.outCurve) {
+    const fn = curveFn(k0.outCurve);
+    if (fn) return { bezier: null, hold: false, fn };
+  }
   if (k0.outInterp === 'linear' && k1.inInterp === 'linear') return { bezier: null, hold: false };
   const T = k1.time - k0.time;
   const L = valueDistance(k0.value, k1.value);
@@ -78,13 +86,20 @@ export function segmentProgress(k0: Keyframe, k1: Keyframe, t: number): number {
   const T = k1.time - k0.time;
   if (T <= 0) return 1;
   const x = (t - k0.time) / T;
+  if (curve.fn) return curve.fn(Math.min(1, Math.max(0, x)));
   if (!curve.bezier) return Math.min(1, Math.max(0, x));
   const [x1, y1, x2, y2] = curve.bezier;
   return cubicBezierAt(x1, y1, x2, y2, x);
 }
 
-/** Evaluate an animated property at layer time `t`. */
+/** Evaluate an animated property at layer time `t` (including any wiggle). */
 export function evaluateProp<T extends PropValue>(prop: AnimProp<T>, t: number): T {
+  const v = evaluateKeys(prop, t);
+  return prop.wiggle && prop.wiggle.amp !== 0 ? applyWiggle(v, prop.wiggle, t) : v;
+}
+
+/** Keyframed value only (no procedural modifiers). */
+export function evaluateKeys<T extends PropValue>(prop: AnimProp<T>, t: number): T {
   const keys = prop.keyframes;
   if (keys.length === 0) return prop.value;
   if (t <= keys[0].time) return keys[0].value;

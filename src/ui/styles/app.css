@@ -1033,3 +1033,60 @@ kbd {
   font-weight: 700;
   pointer-events: none;
 }
+
+/* ---------------------------------------------------------------- graph editor & easing */
+.graph-overlay {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  border-top: 1px solid var(--line);
+}
+.graph-editor {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+.graph-editor canvas {
+  display: block;
+}
+.seg {
+  display: inline-flex;
+  gap: 0;
+}
+.seg button {
+  border-radius: 0;
+}
+.seg button:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.seg button:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.ease-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.ease-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 2px;
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: capitalize;
+  overflow: hidden;
+}
+.ease-btn span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ease-btn .curve-preview {
+  color: var(--accent);
+}
+.ease-btn:hover {
+  color: var(--text);
+}

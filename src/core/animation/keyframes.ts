@@ -1,6 +1,7 @@
 import { uid } from '../model/ids';
 import type { AnimProp, Interpolation, Keyframe, PropValue, TemporalEase } from '../model/types';
-import { evaluateProp } from './interpolate';
+import { evaluateKeys as evaluateProp, segmentCurve, valueDistance } from './interpolate';
+import { easingById, type Bezier } from './easings';
 
 /** Two keyframes closer than this (seconds) are considered the same time. */
 export const KEY_EPSILON = 1e-4;
@@ -66,15 +67,15 @@ export function addKeyframeAt<T extends PropValue>(prop: AnimProp<T>, t: number,
  * all keyframes and freezes the value as evaluated at t.
  */
 export function toggleAnimation<T extends PropValue>(prop: AnimProp<T>, t: number): AnimProp<T> {
-  if (prop.keyframes.length > 0) return { value: evaluateProp(prop, t), keyframes: [] };
-  return { value: prop.value, keyframes: [makeKeyframe(t, prop.value)] };
+  if (prop.keyframes.length > 0) return { ...prop, value: evaluateProp(prop, t), keyframes: [] };
+  return { ...prop, value: prop.value, keyframes: [makeKeyframe(t, prop.value)] };
 }
 
 export function removeKeyframes<T extends PropValue>(prop: AnimProp<T>, ids: ReadonlySet<string>, t: number): AnimProp<T> {
   const keys = prop.keyframes.filter((k) => !ids.has(k.id));
   if (keys.length === prop.keyframes.length) return prop;
   // Removing the last keyframe leaves the property static at its value at t.
-  if (keys.length === 0) return { value: evaluateProp(prop, t), keyframes: [] };
+  if (keys.length === 0) return { ...prop, value: evaluateProp(prop, t), keyframes: [] };
   return { ...prop, keyframes: keys };
 }
 
@@ -132,6 +133,7 @@ export function easyEase<T extends PropValue>(prop: AnimProp<T>, ids: ReadonlySe
     keyframes: prop.keyframes.map((k) => {
       if (!ids.has(k.id)) return k;
       const n = { ...k };
+      if (side !== 'in') delete n.outCurve;
       if (side !== 'out') {
         n.inInterp = 'bezier';
         n.inEase = { ...EASY_EASE };
@@ -160,4 +162,124 @@ export function prevKeyframeTime(prop: AnimProp, t: number): number | null {
 export function nextKeyframeTime(prop: AnimProp, t: number): number | null {
   for (const k of prop.keyframes) if (k.time > t + KEY_EPSILON) return k.time;
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Curves ⇄ After Effects speed/influence
+// ---------------------------------------------------------------------------
+
+/**
+ * Set the segment k0 → k1 to a normalised cubic bezier, expressed as AE
+ * speed/influence on k0's out side and k1's in side (lossless round trip with
+ * `segmentCurve` whenever the values differ).
+ */
+export function easeFromBezier<T extends PropValue>(k0: Keyframe<T>, k1: Keyframe<T>, b: Bezier): [Keyframe<T>, Keyframe<T>] {
+  const T_ = k1.time - k0.time;
+  const L = valueDistance(k0.value, k1.value);
+  const x1 = Math.min(1, Math.max(0.001, b[0]));
+  const x2 = Math.min(0.999, Math.max(0, b[2]));
+  const i1 = 1 - x2;
+  const s0 = T_ > 0 && L > 0 ? (b[1] * L) / (x1 * T_) : 0;
+  const s1 = T_ > 0 && L > 0 ? ((1 - b[3]) * L) / (i1 * T_) : 0;
+  const a: Keyframe<T> = { ...k0, outInterp: 'bezier', outEase: { speed: s0, influence: x1 } };
+  delete a.outCurve;
+  const c: Keyframe<T> = { ...k1, inInterp: 'bezier', inEase: { speed: s1, influence: i1 } };
+  return [a, c];
+}
+
+/** The normalised bezier currently describing segment k0 → k1 (linear → identity). */
+export function bezierOfSegment(k0: Keyframe, k1: Keyframe): Bezier {
+  const c = segmentCurve(k0, k1);
+  return c.bezier ?? [1 / 3, 1 / 3, 2 / 3, 2 / 3];
+}
+
+/**
+ * Apply an easing preset (or a raw bezier) to every segment that starts at a
+ * selected keyframe. A lone selected last keyframe eases its incoming segment.
+ */
+export function applyEasing<T extends PropValue>(prop: AnimProp<T>, ids: ReadonlySet<string>, easing: string | Bezier): AnimProp<T> {
+  const keys = prop.keyframes.slice();
+  if (keys.length < 2) return prop;
+  const def = typeof easing === 'string' ? easingById(easing) : null;
+  const starts = new Set<number>();
+  keys.forEach((k, i) => {
+    if (!ids.has(k.id)) return;
+    if (i < keys.length - 1) starts.add(i);
+    else if (!ids.has(keys[i - 1].id)) starts.add(i - 1);
+  });
+  for (const i of [...starts].sort((a, b) => a - b)) {
+    const k0 = keys[i];
+    const k1 = keys[i + 1];
+    if (def && def.kind === 'fn') {
+      keys[i] = { ...k0, outInterp: 'bezier', outCurve: def.id };
+      continue;
+    }
+    const bz: Bezier = def && def.kind === 'bezier' ? def.bezier : (easing as Bezier);
+    const isLinear = def?.id === 'linear-inOut';
+    if (isLinear) {
+      const a = { ...k0, outInterp: 'linear' as const };
+      delete a.outCurve;
+      keys[i] = a;
+      keys[i + 1] = { ...k1, inInterp: 'linear' };
+      continue;
+    }
+    const [a, b] = easeFromBezier(k0, k1, bz);
+    keys[i] = a;
+    keys[i + 1] = b;
+  }
+  return { ...prop, keyframes: keys };
+}
+
+/** Edit one side of one keyframe's temporal ease (graph handles, velocity dialog). */
+export function setKeyEase<T extends PropValue>(prop: AnimProp<T>, keyId: string, side: 'in' | 'out', ease: Partial<TemporalEase>): AnimProp<T> {
+  return {
+    ...prop,
+    keyframes: prop.keyframes.map((k) => {
+      if (k.id !== keyId) return k;
+      const n = { ...k };
+      if (side === 'in') {
+        n.inInterp = 'bezier';
+        n.inEase = { ...k.inEase, ...ease };
+        n.inEase.influence = Math.min(1, Math.max(0.01, n.inEase.influence));
+      } else {
+        n.outInterp = 'bezier';
+        n.outEase = { ...k.outEase, ...ease };
+        n.outEase.influence = Math.min(1, Math.max(0.01, n.outEase.influence));
+        delete n.outCurve;
+      }
+      return n;
+    }),
+  };
+}
+
+/** Change keyframe values (graph editor vertical drags). */
+export function setKeyValues<T extends PropValue>(prop: AnimProp<T>, values: ReadonlyMap<string, T>): AnimProp<T> {
+  return { ...prop, keyframes: prop.keyframes.map((k) => (values.has(k.id) ? { ...k, value: values.get(k.id)! } : k)) };
+}
+
+/**
+ * Replace function-curve segments starting at the given keys with linear
+ * keyframes sampled every `step` seconds, so the motion survives tools that
+ * only understand plain keyframes.
+ */
+export function bakeSegments<T extends PropValue>(prop: AnimProp<T>, ids: ReadonlySet<string>, step: number): AnimProp<T> {
+  const out: Keyframe<T>[] = [];
+  const keys = prop.keyframes.slice();
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const next = keys[i + 1];
+    if (!next || !ids.has(k.id) || k.outInterp === 'hold') {
+      out.push(k);
+      continue;
+    }
+    const a = { ...k, outInterp: 'linear' as const };
+    delete a.outCurve;
+    out.push(a);
+    for (let t = k.time + step; t < next.time - step / 2; t += step) {
+      const sample = makeKeyframe(t, evaluateProp(prop, t), 'linear');
+      out.push(sample);
+    }
+    if (out.length && i + 1 < keys.length) keys[i + 1] = { ...next, inInterp: 'linear' } as Keyframe<T>;
+  }
+  return { ...prop, keyframes: out };
 }

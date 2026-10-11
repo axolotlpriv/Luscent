@@ -71,8 +71,20 @@ export function hasVideo(type: LayerType): boolean {
   return type !== 'audio';
 }
 
-export function propDefsFor(type: LayerType): PropDef[] {
-  return hasVideo(type) ? [...TRANSFORM_PROPS, ...CONTENT_PROPS[type]] : [...CONTENT_PROPS[type]];
+/**
+ * Property definitions for a layer type. Pass the layer itself to include
+ * its dynamic properties (effect parameters, time remap).
+ */
+export function propDefsFor(type: LayerType, layer?: unknown): PropDef[] {
+  const base = hasVideo(type) ? [...TRANSFORM_PROPS, ...CONTENT_PROPS[type]] : [...CONTENT_PROPS[type]];
+  const extra = layer ? dynamicDefs(layer) : [];
+  return [...base, ...extra];
+}
+
+/** Hook for dynamic (per-layer) property definitions; installed by the effects system. */
+let dynamicDefs: (layer: unknown) => PropDef[] = () => [];
+export function setDynamicPropDefs(fn: (layer: unknown) => PropDef[]): void {
+  dynamicDefs = fn;
 }
 
 const ALL_DEFS = new Map<PropPath, PropDef>();

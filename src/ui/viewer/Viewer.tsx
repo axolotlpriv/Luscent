@@ -257,6 +257,25 @@ export function Viewer() {
     .map((l) => evaluateLayer(project, comp, l, playhead, { measureText: measure }))
     .filter((it): it is RenderItem => !!it);
 
+  // Motion paths for selected layers with animated position.
+  const motionPaths = selectedLayers
+    .map((id) => comp.layers.find((l) => l.id === id))
+    .filter((l): l is NonNullable<typeof l> => !!l && (l.props['transform.position']?.keyframes.length ?? 0) > 1)
+    .map((l) => {
+      const keys = l.props['transform.position'].keyframes;
+      const a = l.startTime + keys[0].time;
+      const b = l.startTime + keys[keys.length - 1].time;
+      const step = Math.max(1 / comp.fps, (b - a) / 300);
+      const at = (t: number) => {
+        const lt = t - l.startTime;
+        const anchor = evaluateProp(l.props['transform.anchor'], lt) as Vec2;
+        return apply(worldMatrix(comp, l, t), anchor[0], anchor[1]);
+      };
+      const pts: string[] = [];
+      for (let t = a; t <= b + 1e-9; t += step) pts.push(at(t).map((v) => v.toFixed(1)).join(','));
+      return { id: l.id, points: pts.join(' '), keys: keys.map((k) => at(l.startTime + k.time)) };
+    });
+
   return (
     <div className="viewer">
       <div className="viewer-stage" ref={stageRef} onPointerDown={onPointerDown} onWheel={onWheel}>
@@ -266,6 +285,14 @@ export function Viewer() {
         <svg className="viewer-overlay" style={{ pointerEvents: 'none' }} width={stage.w} height={stage.h}>
           <g transform={`translate(${left} ${top}) scale(${zoom})`}>
             {safeZones && <SafeZones w={comp.width} h={comp.height} zoom={zoom} />}
+            {motionPaths.map((mp) => (
+              <g key={'mp' + mp.id}>
+                <polyline points={mp.points} fill="none" stroke="#ffcf3d" strokeOpacity="0.8" strokeWidth={1.2 / zoom} strokeDasharray={`${3 / zoom} ${3 / zoom}`} />
+                {mp.keys.map(([x, y], i) => (
+                  <rect key={i} x={x - 3 / zoom} y={y - 3 / zoom} width={6 / zoom} height={6 / zoom} fill="#ffcf3d" transform={`rotate(45 ${x} ${y})`} />
+                ))}
+              </g>
+            ))}
             {selItems.map((it) => {
               const q = itemCorners(it);
               const anchor = apply(it.matrix, ...(anchorOf(it) as [number, number]));

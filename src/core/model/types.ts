@@ -47,12 +47,30 @@ export interface Keyframe<T extends PropValue = PropValue> {
   outInterp: Interpolation;
   inEase: TemporalEase;
   outEase: TemporalEase;
+  /**
+   * Function curve (easing id, e.g. "elastic-out") overriding the segment
+   * leaving this keyframe. Used for curves a cubic bezier can't express.
+   */
+  outCurve?: string;
+}
+
+/** AE `wiggle(freq, amp, octaves, ampMult)` as a deterministic modifier. */
+export interface Wiggle {
+  /** Wiggles per second. */
+  freq: number;
+  /** Maximum offset in property units. */
+  amp: number;
+  octaves: number;
+  ampMult: number;
+  seed: number;
 }
 
 /** An animatable property. Animated iff `keyframes.length > 0`. */
 export interface AnimProp<T extends PropValue = PropValue> {
   value: T;
   keyframes: Keyframe<T>[];
+  /** Optional procedural offset added on top of the animated value. */
+  wiggle?: Wiggle;
 }
 
 // ---------------------------------------------------------------------------
