@@ -11,6 +11,7 @@ import { effectRegistry } from './core/effects/registry';
 import { GpuFarneback } from './engine/flow/gpuFarneback';
 import { farnebackFlow } from './core/flow/farneback';
 import { getGpuDevice } from './engine/gpu/device';
+import { usePresetLibrary } from './state/presetLibrary';
 import './ui/styles/app.css';
 
 registerBuiltinEffects();
@@ -32,6 +33,7 @@ async function boot() {
     editor,
     effects: effectRegistry,
     plugins: pluginStore,
+    presets: usePresetLibrary,
     // Engine internals for automated tests and debugging.
     debug: { GpuFarneback, farnebackFlow, getGpuDevice },
   };

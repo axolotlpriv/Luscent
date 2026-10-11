@@ -18,7 +18,7 @@ A `Project` is plain, serialisable JSON: compositions, media items and ids. It h
   - `inPoint` / `outPoint` mark where the layer is visible in comp time.
   - `startTime` is the comp time at which layer time 0 (source frame 0) plays.
   - Keyframes are stored in **layer time**, so moving a layer carries its animation. Slip edits move `startTime` and shift the keyframes back, so the animation stays fixed in comp time.
-- **Properties** live in `layer.props` keyed by path (`transform.position`, `content.fill`, `audio.volume`…). The same generic `AnimProp` shape serves every property. The metadata in `properties.ts` (label, unit, scrub step, range, reveal key) drives the UI. The graph editor (phase 2) and the `.ffx` mapper (phase 4) will use the same metadata.
+- **Properties** live in `layer.props` keyed by path (`transform.position`, `content.fill`, `audio.volume`…). The same generic `AnimProp` shape serves every property. The metadata in `properties.ts` (label, unit, scrub step, range, reveal key) drives the UI. The graph editor and the preset engine use the same metadata.
 - **Stack order**: `comp.layers[0]` is the top layer, as in AE's layer panel.
 
 ## Animation (`src/core/animation`)
@@ -34,7 +34,7 @@ The AE model was chosen over storing CSS-style handles for two reasons:
 - `.ffx` presets store keyframes this way, so they can map in without loss.
 - The speed graph falls straight out of the data.
 
-Holds and linear segments are special cases. Overshooting easings (back, elastic, bounce) are planned as per-segment preset curves in phase 2.
+Holds and linear segments are special cases. Back easings fit in a cubic bezier with overshoot. Elastic and bounce can't, so they are stored as a function curve on the segment (`Keyframe.outCurve`); the graph editor can bake them into keys. `AnimProp.wiggle` adds a deterministic, AE-compatible `wiggle()` on top of the keyed value.
 
 All keyframe operations are pure functions: `AnimProp → AnimProp`.
 
@@ -83,7 +83,7 @@ Each layer is drawn as one quad:
 - **Text** is rasterised with Canvas2D at a resolution that matches its on-screen scale. It is cached by content key (LRU) and uploaded once.
 - **Precomps** render into pooled offscreen targets and are then drawn as textures.
 
-Blending is fixed-function on premultiplied alpha. Exact non-separable blend modes and adjustment layers need shader ping-pong, which arrives with the effects pipeline (phase 3).
+Layers render into an offscreen accumulation target. A plain layer with normal blending is drawn straight in. A layer with effects or another blend mode is isolated: it is drawn into its own target, run through its effect chain (pooled ping-pong targets) and composited with an exact W3C blend-mode shader (19 modes). Adjustment layers run their effects over the accumulated image below them, masked by their own alpha. Transition plugins receive from/to frames and are placed at a layer's in or out point.
 
 **Preview resolution** is automatic by default: it is the viewer zoom × devicePixelRatio, rounded to quarter steps. A 1080×1920 comp shown at 35% therefore renders about a quarter of the pixels. This is the main lever for real-time 1080p preview on mid-range hardware. Full, Half and Quarter can also be forced.
 
@@ -96,7 +96,7 @@ Blending is fixed-function on premultiplied alpha. Exact non-separable blend mod
 - **While playing**, elements free-run on hardware decode. They are steered back towards the transport clock with small playback-rate nudges, and hard-seek only when the drift exceeds 200 ms.
 - **While scrubbing**, seeks are coalesced. A redraw is requested when each seek lands.
 
-Frame-exact random access is needed for export and optical-flow retiming. It will come from a WebCodecs `VideoDecoder` behind the same `frame()` interface (phases 3 and 4).
+Frame-exact random access, needed for export and optical-flow retiming, comes from `FrameSource`: a dedicated decoder element per media that seeks and waits for `requestVideoFrameCallback`, with the frame rate detected from the callback timestamps.
 
 ### Playback (`src/engine/playback`)
 
@@ -105,6 +105,47 @@ The **AudioContext clock is the master clock**, so picture follows sound. That m
 - `AudioEngine` flattens audible clips through precomps (`core/render/audioClips.ts`) and schedules `AudioBufferSourceNode`s sample-accurately.
 - Keyframed volume becomes a `setValueCurveAtTime` automation curve.
 - The transport loops the work area, follows the playhead in the timeline, and reschedules audio when the project changes mid-playback.
+
+## Effects and plugins (`src/core/effects`, `src/effects`, `src/engine/plugins`)
+
+An effect is data: an `EffectPlugin` with metadata, a parameter schema and one or more GLSL passes (or a WGSL shader). `effectRegistry` holds built-ins, bundled packs and installed plugins, and bumps a revision counter when a plugin changes, so the renderer recompiles and the UI refreshes (hot reload).
+
+- **Parameters are properties.** An effect instance stores its parameters as `fx.<instanceId>.<paramId>` entries in `layer.props`, so they get keyframes, the graph editor and presets for free.
+- **Shader contract**: a pass defines `vec4 effect(vec2 uv)` over a premultiplied input. Parameters become uniforms. A prelude supplies time, sizes and helpers.
+- **Converter** (`convert.ts`): rewrites gl-transitions, ISF (including multi-pass) and Shadertoy sources into that contract and reports anything unsupported. The bundled packs are converted at load time.
+- **WGSL** plugins run on WebGPU through a bridge: the WebGL texture is read back, processed by WebGPU and returned as an `ImageBitmap`.
+
+The full format is in [PLUGINS.md](PLUGINS.md).
+
+## Time remap and optical flow (`src/core/timeline/timeRemap.ts`, `src/core/flow`, `src/engine/flow`)
+
+`time.remap` maps layer time to source time. Speed ramps are ordinary keyframes on it, so the speed graph is the playback speed. When a remapped time falls between two source frames, frame blending chooses nearest, a cross-fade, or optical flow.
+
+- **Farnebäck flow** has a CPU reference (`core/flow/farneback.ts`, unit tested on synthetic motion) and a WebGPU compute port (`engine/flow/gpuFarneback.ts`) that matches it.
+- **`FrameInterpolator`** synthesises in-between frames by warping the neighbouring source frames along the flow, and caches the results. Preview uses it asynchronously; export awaits it.
+- **RIFE** is optional. ONNX Runtime Web is loaded from a CDN on demand, with a user-supplied model.
+
+## Export and caches (`src/engine/export`, `src/engine/cache`)
+
+- **`OfflineRenderer`** renders any comp time to an `OffscreenCanvas` with exact source frames and awaited flow. Export, RAM preview and proxies share it.
+- **Encoding**: WebCodecs `VideoEncoder` / `AudioEncoder`, muxed with mp4-muxer or webm-muxer, or quantised with gifenc for GIF.
+  - The H.264 profile and level are chosen from the frame size and rate.
+  - If no H.264 encoder exists, MP4 falls back to VP9.
+  - Audio is a sample-accurate `OfflineAudioContext` mixdown of the same clips playback uses.
+- **Proxies**: 540p VP9 transcodes stored in IndexedDB, used by preview when the Proxy toggle is on.
+- **RAM preview**: renders the work area into a `FrameCache` of `ImageBitmap`s. The cache is invalidated by any project change.
+
+## Presets (`src/core/presets`, `src/presets`, `src/core/ffx`)
+
+A `LuscentPreset` is JSON. The format is in [PRESETS.md](PRESETS.md).
+
+- **`apply.ts`**: evaluates a preset's expressions against the comp (size, fps, beat length from the music analysis, current values) and writes keyframes, wiggles and effects into a layer. A speed ramp is integrated into Time Remap keys. Comp presets build new layers. Like the timeline ops, these functions mutate the object they receive. The store runs them on plain copies and swaps the results into the draft, so one application is one undo step.
+- **`capture.ts`**: the inverse. It turns a layer's animation into a preset with times relative to its first key and native eases (`ae.native`).
+- **After Effects import**:
+  - `rifx.ts` parses the big-endian RIFF container shared by `.ffx` and `.aep`.
+  - `properties.ts` decodes property groups and keyframe streams (`tdgp` / `tdbs` / `tdb4` / `ldat`) into values with AE speed/influence eases.
+  - `import.ts` maps match names onto Luscent properties and effects, and records a mapped / approximated / unmapped report.
+  - AE stores a speed per dimension; `apply.ts` projects it onto Luscent's single path speed.
 
 ## State and undo (`src/state/store.ts`)
 
@@ -124,6 +165,8 @@ UI-only state is part of the store but not of undo:
 - snapping toggles
 
 ## Persistence (`src/engine/persist`)
+
+IndexedDB holds five stores: `projects`, `media`, `library` (curves), `plugins` and `presets`.
 
 - **Autosave**: shortly after each change (debounced), the project JSON and the imported media blobs are written to IndexedDB. Reloading restores the session.
 - **Project file**: `serializeProject` writes `{ format, version, project }`. Non-finite numbers are tagged, since stills have infinite duration. `deserializeProject` is where future migrations hook in.

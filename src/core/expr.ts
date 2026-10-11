@@ -1,8 +1,10 @@
 /**
- * Tiny arithmetic evaluator for numeric fields ("1920/2", "100*1.5", "(3+4)*2").
- * Supports + - * / parentheses and unary minus. Returns null on bad input.
+ * Tiny arithmetic evaluator for numeric fields ("1920/2", "100*1.5", "(3+4)*2")
+ * and preset expressions ("w/2", "beat*0.5", "max(cur, 100)").
+ * Supports + - * / parentheses, unary minus, variables and a few functions.
+ * Returns null on bad input (never evaluates arbitrary code).
  */
-export function evalArithmetic(input: string): number | null {
+export function evalArithmetic(input: string, vars: Record<string, number> = {}): number | null {
   const src = input.replace(/\s+/g, '');
   let i = 0;
   const peek = () => src[i];
@@ -28,6 +30,28 @@ export function evalArithmetic(input: string): number | null {
       if (peek() !== ')') return null;
       i++;
       return v;
+    }
+    const id = /^[A-Za-z_][A-Za-z0-9_]*/.exec(src.slice(i));
+    if (id) {
+      i += id[0].length;
+      const name = id[0];
+      if (peek() === '(') {
+        // Functions: min, max, abs, round, floor, ceil, sin, cos, sqrt.
+        i++;
+        const args: number[] = [];
+        while (peek() !== ')') {
+          const a = expr();
+          if (a === null) return null;
+          args.push(a);
+          if (peek() === ',') i++;
+          else if (peek() !== ')') return null;
+        }
+        i++;
+        const fns: Record<string, (...a: number[]) => number> = { min: Math.min, max: Math.max, abs: Math.abs, round: Math.round, floor: Math.floor, ceil: Math.ceil, sin: Math.sin, cos: Math.cos, sqrt: Math.sqrt };
+        const f = fns[name];
+        return f ? f(...args) : null;
+      }
+      return name in vars ? vars[name] : null;
     }
     return number();
   }

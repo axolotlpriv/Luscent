@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { applyPresetWithToast, findPreset, PRESET_DRAG_TYPE } from '../presets/applyPreset';
 import { propDefsFor, type PropDef } from '../../core/model/properties';
 import type { Layer } from '../../core/model/types';
 import { compBeatTimes } from '../../core/timeline/snap';
@@ -170,7 +171,17 @@ export function Timeline() {
     useTimelineUI.setState({ snap: null });
     const mediaId = e.dataTransfer.getData('application/x-luscent-media');
     const compId = e.dataTransfer.getData('application/x-luscent-comp');
-    if (mediaId) s.addMediaToComp(mediaId, t);
+    const presetId = e.dataTransfer.getData(PRESET_DRAG_TYPE);
+    if (presetId) {
+      const preset = findPreset(presetId);
+      if (!preset) return;
+      // Dropped on a layer: animate that layer from the drop time.
+      const row = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-layer-index]');
+      const layer = row ? comp.layers[Number(row.dataset.layerIndex)] : undefined;
+      if (layer) s.selectLayer(layer.id);
+      s.setPlayhead(t);
+      applyPresetWithToast(preset);
+    } else if (mediaId) s.addMediaToComp(mediaId, t);
     else if (compId) s.addCompToComp(compId, t);
     else if (e.dataTransfer.files.length) {
       s.setPlayhead(t);

@@ -1241,3 +1241,115 @@ textarea.code {
   pointer-events: none;
   z-index: 2;
 }
+
+/* ---------------------------------------------------------------- presets */
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.panel-tabs {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+  align-items: stretch;
+}
+.panel-tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  padding: 0 6px;
+}
+.panel-tabs button.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.preset-tools {
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.preset-tools input {
+  width: 100%;
+}
+.preset-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+button.chip {
+  padding: 1px 7px;
+  font-size: 10.5px;
+  border-radius: 10px;
+}
+.preset-list {
+  padding: 4px;
+}
+.preset-row {
+  cursor: pointer;
+}
+.preset-row .name > div:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preset-glyph {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: color-mix(in srgb, var(--accent-2) 45%, var(--panel-3));
+}
+.preset-glyph.cat-shake { background: color-mix(in srgb, #ff7a3d 50%, var(--panel-3)); }
+.preset-glyph.cat-flash { background: color-mix(in srgb, #ffe03d 45%, var(--panel-3)); }
+.preset-glyph.cat-zoom { background: color-mix(in srgb, var(--accent) 50%, var(--panel-3)); }
+.preset-glyph.cat-velocity { background: color-mix(in srgb, var(--beat) 40%, var(--panel-3)); }
+.preset-glyph.cat-transitions { background: color-mix(in srgb, #3dc8ff 45%, var(--panel-3)); }
+.preset-glyph.cat-text { background: color-mix(in srgb, #b3ff3d 35%, var(--panel-3)); }
+.preset-glyph.cat-imported { background: color-mix(in srgb, #9999ff 45%, var(--panel-3)); font-size: 11px; }
+.preset-detail {
+  border-top: 1px solid var(--line);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.preset-detail .meta {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.preset-detail input {
+  width: 100%;
+}
+button.link {
+  align-self: flex-start;
+  padding: 0;
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+.preset-actions {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--line);
+}
+.preset-actions button {
+  flex: 1;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.report-section ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  user-select: text;
+}
+.report-section li {
+  padding: 1px 0;
+}
+.report-section.ok .section-title { color: var(--ok); }
+.report-section.warn .section-title { color: var(--key-sel); }
+.report-section.bad .section-title { color: var(--danger); }

@@ -81,6 +81,8 @@ import { buildProxy } from '../engine/export/proxy';
 import { defaultParamProp, effectRegistry, fxPath, instantiateEffect } from '../core/effects/registry';
 import { pluginParams } from '../core/effects/types';
 import { idb } from '../engine/persist/db';
+import { applyPresetToLayer, buildPresetLayers, compBeat, type ApplyReport, type PresetContext } from '../core/presets/apply';
+import type { LuscentPreset } from '../core/presets/types';
 
 export interface KeySel {
   layerId: Id;
@@ -276,6 +278,9 @@ export interface Actions {
   toggleExpanded(id: Id, value?: boolean): void;
   setReveal(reveal: EditorState['reveal']): void;
   set<K extends keyof EditorState>(key: K, value: EditorState[K]): void;
+  // presets
+  /** Apply a preset to the selected layers (or add its layers) at the playhead. */
+  applyPreset(preset: LuscentPreset): ApplyReport;
 }
 
 export type Store = EditorState & Actions;
@@ -1107,6 +1112,52 @@ export const useEditor = create<Store>()((set, get) => {
     },
     set(key, value) {
       set({ [key]: value } as Partial<Store>);
+    },
+
+    applyPreset(preset) {
+      const s = get();
+      const comp = activeComp(s);
+      const report: ApplyReport = { applied: [], skipped: [] };
+      const ctx: PresetContext = {
+        comp,
+        playhead: s.playhead,
+        beat: compBeat(comp, s.project.media),
+        media: s.project.media,
+        plugin: (id) => effectRegistry.get(id)?.plugin,
+      };
+      try {
+        if (preset.target === 'comp') {
+          const layers = buildPresetLayers(preset, ctx, report);
+          if (!layers.length) return report;
+          editComp(`Preset: ${preset.name}`, (c) => {
+            c.layers.unshift(...layers);
+          });
+          set({ selectedLayers: layers.map((l) => l.id), selectedKeys: {} });
+        } else {
+          const targets = comp.layers.filter((l) => s.selectedLayers.includes(l.id));
+          if (!targets.length) {
+            report.skipped.push('Select a layer first.');
+            return report;
+          }
+          // Work on plain copies, then swap them into the draft.
+          const next = targets.map((l) => {
+            const copy = deepClone(l);
+            applyPresetToLayer(copy, preset, ctx, report);
+            return copy;
+          });
+          if (!report.applied.length) return report;
+          editComp(`Preset: ${preset.name}`, (c) => {
+            for (const l of next) {
+              const i = c.layers.findIndex((x) => x.id === l.id);
+              if (i >= 0) c.layers[i] = l;
+            }
+          });
+          set({ reveal: 'animated', expanded: { ...get().expanded, ...Object.fromEntries(next.map((l) => [l.id, true])) } });
+        }
+      } catch (err) {
+        report.skipped.push((err as Error).message);
+      }
+      return report;
     },
   };
 

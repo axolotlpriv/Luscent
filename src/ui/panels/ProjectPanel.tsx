@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { COMP_PRESETS } from '../../core/model/factory';
 import type { Id, MediaItem } from '../../core/model/types';
 import { formatTimecode } from '../../core/time';
@@ -24,7 +24,7 @@ function fmtDuration(m: MediaItem) {
   return m.kind === 'audio' ? base : `${base} · ${m.width}×${m.height}`;
 }
 
-export function ProjectPanel() {
+export function ProjectPanel({ head = 'Project' }: { head?: ReactNode }) {
   const project = useEditor((s) => s.project);
   const activeCompId = useEditor((s) => s.activeCompId);
   useEditor((s) => s.mediaVersion);
@@ -47,7 +47,7 @@ export function ProjectPanel() {
 
   return (
     <div className="panel">
-      <div className="panel-head">Project</div>
+      <div className="panel-head">{head}</div>
       <div className="panel-body">
         <div className="section">
           <div className="section-title">Add layer</div>

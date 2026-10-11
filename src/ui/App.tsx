@@ -10,6 +10,36 @@ import { TopBar } from './TopBar';
 import { Viewer } from './viewer/Viewer';
 import { PluginManager } from './plugins/PluginManager';
 import { ExportDialog } from './export/ExportDialog';
+import { PresetPanel } from './presets/PresetPanel';
+
+function LeftPanel() {
+  const [tab, setTab] = useState<'project' | 'presets'>(() => {
+    try {
+      return localStorage.getItem('luscent.leftTab') === 'presets' ? 'presets' : 'project';
+    } catch {
+      return 'project';
+    }
+  });
+  const pick = (t: 'project' | 'presets') => {
+    setTab(t);
+    try {
+      localStorage.setItem('luscent.leftTab', t);
+    } catch {
+      /* private mode */
+    }
+  };
+  const head = (
+    <div className="panel-tabs">
+      <button className={tab === 'project' ? 'on' : ''} onClick={() => pick('project')}>
+        Project
+      </button>
+      <button className={tab === 'presets' ? 'on' : ''} onClick={() => pick('presets')}>
+        Presets
+      </button>
+    </div>
+  );
+  return tab === 'project' ? <ProjectPanel head={head} /> : <PresetPanel head={head} />;
+}
 
 export function App() {
   const [timelineH, setTimelineH] = useState(() => Math.round(window.innerHeight * 0.4));
@@ -118,7 +148,7 @@ export function App() {
       />
       <div className="workspace" style={{ gridTemplateRows: `1fr 5px ${timelineH}px` }}>
         <div className="upper">
-          <ProjectPanel />
+          <LeftPanel />
           <Viewer />
           <Inspector />
         </div>

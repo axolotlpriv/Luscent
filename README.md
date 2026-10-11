@@ -1,8 +1,8 @@
 # Luscent
 
-A browser-based motion editor in the spirit of After Effects, tuned for fast, punchy short-form edits (TikTok / Reels / Shorts). Everything runs client-side: TypeScript, React, WebGL2 (WebGPU arrives with the effects pipeline), WebAudio, Web Workers.
+A browser-based motion editor in the spirit of After Effects, tuned for fast, punchy short-form edits (TikTok / Reels / Shorts). Everything runs client-side: TypeScript, React, WebGL2, WebGPU, WebCodecs, WebAudio, Web Workers and (optionally) ONNX Runtime Web.
 
-> **Status: phase 1 of 4 — timeline, keyframes and real-time preview.** See [docs/ROADMAP.md](docs/ROADMAP.md) for what is next.
+> **Status: all four phases are in.** Timeline and preview, graph editor and easings, effects and plugins, presets and export. See [docs/ROADMAP.md](docs/ROADMAP.md) for what's done and what's next.
 
 ## Quick start
 
@@ -13,35 +13,68 @@ npm test           # unit tests (vitest)
 npm run build      # typecheck + production build
 ```
 
-On first launch Luscent opens a small demo comp (no media needed). Drop video, audio or images anywhere on the window to import them. The session (project + media files) is autosaved to IndexedDB, so a reload brings everything back. **Save** writes a `.luscent.json` project file.
+On first launch Luscent opens a small demo comp (no media needed). Drop video, audio or images anywhere on the window to import them. The session (project and media files) is autosaved to IndexedDB, so a reload brings everything back. **Save** writes a `.luscent.json` project file.
 
-> Codec support is whatever your browser decodes. Chrome/Edge handle H.264/AAC MP4; open-source Chromium builds only handle WebM/VP9/Opus.
+> Codec support is whatever your browser decodes and encodes. Chrome and Edge handle H.264/AAC MP4. Open-source Chromium builds only handle WebM/VP9/Opus; there, MP4 export falls back to VP9 in MP4.
 
-## What works in phase 1
+## Features
 
-**Compositions & layers**
-- 9:16-first comp presets (1080×1920 at 30/60, 4K vertical, 1:1, 4:5, 16:9)
-- Layer types: video, image, audio, text, rectangle/ellipse shapes (SDF-rendered, rounded corners, stroke), solid, null, precomp
-- Parenting, blend modes (normal, add, screen, multiply, lighten), solo/lock/visibility/audio switches, label colours
-- Precomps: pre-compose a selection (⌘⇧C), nest comps by dragging them onto the timeline, double-click to open, breadcrumb navigation
+### Timeline (phase 1)
 
-**Timeline**
-- Move, trim, split (⌘⇧D / ⌘K, or blade everything under the playhead), ripple trim (Alt or the Ripple toggle), ripple delete (⇧⌫), slip (Alt-drag a clip), sequence layers, extract the work area, duplicate, copy/paste, drag to reorder
-- Markers (M, drag, rename), work area (B / N, drag)
-- Snapping to the playhead, layer edges, markers, work area, keyframes, **detected beats and transients** (⌘/Ctrl inverts while dragging)
-- Audio waveforms drawn from a peak pyramid, beat grid on the ruler and across tracks, "markers every bar/beat"
-- Zoom with Ctrl/⌘ + wheel, `=` / `-`, `\` to fit
+- 9:16-first comp presets: 1080×1920 at 30/60, 4K vertical, 1:1, 4:5, 16:9
+- Layer types: video, image, audio, text, rectangle/ellipse shapes, solid, null, adjustment and precomp
+- Parenting, solo/lock/visibility/audio switches, label colours
+- Precomps: pre-compose (⌘⇧C), nest by dragging, double-click to open, breadcrumbs
+- Edits: move, trim, split (⌘⇧D / ⌘K), ripple trim, ripple delete, slip, sequence, extract work area, copy/paste, reorder
+- Markers and work area
+- Snapping to the playhead, edges, markers, keyframes, **detected beats and transients**
+- Audio waveforms and a beat grid
+- Keyframes: linear, bezier (AE speed/influence) and hold; easy ease (F9); AE-style reveal shortcuts (P S R T A U L)
+- WebGL2 preview with automatic resolution, audio-clock playback, on-canvas dragging and safe-zone overlay
+- Undo/redo for every edit
 
-**Keyframes**
-- Stopwatch per property, ◀ ◆ ▶ keyframe navigation, value scrubbing (Shift ×10, Alt ×0.1, type maths like `1920/2`)
-- Linear, bezier (After Effects speed/influence model) and hold interpolation, Easy Ease / In / Out (F9)
-- Drag and marquee-select keyframes, reveal properties AE-style (P S R T A, U for animated, L for volume)
+### Graph editor and easings (phase 2)
 
-**Preview**
-- WebGL2 compositor with automatic preview resolution, render-target pooling, cached text and image textures
-- On-canvas selection and drag-to-move (parent-aware), TikTok/Reels/Shorts safe-zone overlay
-- Audio-clock-driven playback with work-area looping, sample-accurate WebAudio scheduling and keyframed volume
-- Undo/redo for every edit; a drag is a single undo step
+- Value and speed graphs (⇧F3), with bezier handles mapped onto AE speed/influence
+- Easing presets: sine, quad, cubic, quart, quint, expo, circ, back, elastic, bounce, plus snap, punch and whip
+  - Elastic and bounce are exact function curves and can be baked to keys
+- A saveable custom curve library, with JSON import/export
+- Keyframe velocity, copy/paste keyframes, a `wiggle()` modifier, motion paths in the viewer
+
+### Effects and plugins (phase 3)
+
+- Effect stacks on any layer, adjustment layers and 19 exact blend modes
+- 21 built-in effects:
+  - glow, chromatic aberration, RGB split, shake, VHS, grain, glitch, lens distortion
+  - gaussian / directional / radial blur
+  - transform, wave, mosaic, mirror, colour adjust, tint, invert, vignette, flash, drop shadow
+- 8 transitions: whip, zoom, spin, flash, glitch, RGB split, push, dissolve
+- **Optical-flow slow motion** (Twixtor-style):
+  - Time Remap with speed ramps, freeze and reverse
+  - Farnebäck flow on WebGPU compute, with a CPU fallback
+  - Optional RIFE through ONNX Runtime Web
+- **Plugin system**: a documented JSON + GLSL/WGSL format with install, share, hot reload and a live Shader Lab
+  - Bundled packs: 123 gl-transitions, ISF and Shadertoy samples
+  - A converter for gl-transitions, ISF, Shadertoy and GLSL
+  - See [docs/PLUGINS.md](docs/PLUGINS.md)
+
+### Presets and export (phase 4)
+
+- **63 built-in presets**: shakes, flashes, zoom punches, velocity edits, transitions, text animations, looks
+  - Beat presets lock to the music's tempo
+- Presets panel with search and categories. Double-click to apply, or drag onto a timeline layer.
+- **Save any layer's animation as a preset.** It keeps keyframes with their exact eases, wiggles, effects and speed ramps.
+- Import and export Luscent JSON presets
+- **After Effects `.ffx` / `.aep` import**: keyframes with exact eases, transform, time remap, common effects and expressions. A report lists everything that was approximated or not mapped. See [docs/PRESETS.md](docs/PRESETS.md).
+- **Export** with WebCodecs:
+  - MP4/H.264 up to 4K60 (level picked automatically), with AAC or Opus audio from a sample-accurate offline mixdown
+  - WebM/VP9
+  - GIF
+  - 9:16 platform presets
+- **Performance**:
+  - automatic preview resolution
+  - 540p proxy media
+  - RAM preview of the work area, cached as GPU bitmaps
 
 Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
@@ -49,12 +82,19 @@ Press <kbd>?</kbd> in the app for all keyboard shortcuts.
 
 ```
 src/
-  core/        pure TypeScript, no DOM: model, animation, timeline ops, audio analysis, render evaluation
-  engine/      browser runtime: WebGL2 renderer, media decoding, playback, persistence
+  core/        pure TypeScript, no DOM: model, animation, timeline ops, audio analysis,
+               render evaluation, effects registry + shader converter, optical flow,
+               presets, After Effects (RIFX) parser
+  engine/      browser runtime: WebGL2 renderer, WebGPU bridge + flow, media decoding,
+               playback, export, caches, persistence, plugin store
+  effects/     built-in effects, transitions and bundled shader packs
+  presets/     built-in presets
   workers/     audio analysis worker (waveform peaks + beat tracking)
-  state/       zustand store and every user action
-  ui/          React components (viewer, timeline, panels)
-docs/          architecture notes and roadmap
+  state/       zustand stores: editor actions + undo, curve and preset libraries
+  ui/          React components (viewer, timeline, graph editor, panels, dialogs)
+docs/          architecture, roadmap, plugin and preset formats
 ```
 
-`core/` holds the logic and the unit tests. It never touches the DOM, so the same code can later drive headless export in a worker. More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+`core/` holds the logic and most of the unit tests. It never touches the DOM. More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+Third-party material is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
