@@ -2,23 +2,8 @@ import type { Project } from '../../core/model/types';
 import { editor, useEditor } from '../../state/store';
 import { mediaEngine } from '../media/MediaEngine';
 import { idb } from './db';
-
-const KEY = 'autosave';
-
-/** Restore the last session (project + media blobs) from IndexedDB. */
-export async function restoreSession(): Promise<boolean> {
-  try {
-    const saved = await idb.get<Project>('projects', KEY);
-    if (!saved || !saved.compositions) return false;
-    editor().loadProject(saved);
-    // Decode in the background; the UI shows per-item loading state.
-    void attachAllMedia(saved);
-    return true;
-  } catch (err) {
-    console.warn('Could not restore session', err);
-    return false;
-  }
-}
+import { collectMediaGarbage, saveProjectRecord } from './projects';
+import { renderThumbnail } from './thumbnail';
 
 /** Load runtime resources for every media item that has a stored blob. */
 export async function attachAllMedia(project: Project): Promise<void> {
@@ -35,19 +20,44 @@ export async function attachAllMedia(project: Project): Promise<void> {
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** The project as it was when opened or created: nothing to save until it changes. */
+let baseline: Project | null = null;
+let lastThumb = 0;
+const THUMB_EVERY_MS = 20_000;
+
+export function setAutosaveBaseline(p: Project | null): void {
+  baseline = p;
+  clearTimeout(timer);
+}
+
+/** Write the open project (and a fresh thumbnail when `thumb`) to the browser's project list. */
+export async function flushAutosave(opts: { thumb?: boolean } = {}): Promise<void> {
+  clearTimeout(timer);
+  const s = editor();
+  const p = s.project;
+  if (p === baseline) return;
+  try {
+    let thumb: string | undefined;
+    if (opts.thumb || Date.now() - lastThumb > THUMB_EVERY_MS) {
+      lastThumb = Date.now();
+      thumb = (await renderThumbnail(p, s.playhead)) ?? undefined;
+    }
+    await saveProjectRecord(p, thumb);
+    await collectMediaGarbage(p);
+  } catch (err) {
+    console.warn('Autosave failed', err);
+  }
+}
 
 export function installAutosave(): void {
   useEditor.subscribe((s, prev) => {
-    if (s.project === prev.project) return;
+    if (s.project === prev.project || s.project === baseline) return;
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      const p = editor().project;
-      idb.put('projects', KEY, p).catch((err) => console.warn('Autosave failed', err));
-      // Drop blobs for media no longer in the project.
-      idb
-        .keys('media')
-        .then((keys) => Promise.all(keys.filter((k) => !p.media[String(k)]).map((k) => idb.del('media', String(k)))))
-        .catch(() => undefined);
-    }, 600);
+    timer = setTimeout(() => void flushAutosave(), 800);
+  });
+  // Last chance when the tab is hidden or closed (no thumbnail: it's async).
+  window.addEventListener('pagehide', () => {
+    const p = editor().project;
+    if (p !== baseline) void saveProjectRecord(p);
   });
 }

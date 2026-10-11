@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { deserializeProject, serializeProject } from '../core/model/serialize';
-import { attachAllMedia } from '../engine/persist/autosave';
+import { LSP_EXTENSION } from '../core/model/lsp';
+import { isNativeApp } from '../engine/platform/files';
+import { useApp } from '../state/app';
+import { goHome, openProjectFile, saveProjectToFile } from '../state/projectActions';
 import { editor, useEditor } from '../state/store';
+import { Home } from './home/Home';
 import { Inspector } from './panels/Inspector';
 import { ProjectPanel } from './panels/ProjectPanel';
 import { SHORTCUTS, useShortcuts } from './shortcuts';
@@ -42,6 +45,11 @@ function LeftPanel() {
 }
 
 export function App() {
+  const screen = useApp((s) => s.screen);
+  return screen === 'home' ? <Home /> : <EditorScreen />;
+}
+
+function EditorScreen() {
   const [timelineH, setTimelineH] = useState(() => Math.round(window.innerHeight * 0.4));
   const [help, setHelp] = useState(false);
   const [plugins, setPlugins] = useState(false);
@@ -51,17 +59,7 @@ export function App() {
   const openRef = useRef<HTMLInputElement>(null);
   const toasts = useEditor((s) => s.toasts);
 
-  const save = useCallback(() => {
-    const p = editor().project;
-    const blob = new Blob([serializeProject(p)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${p.name.replace(/[^\w\- ]+/g, '').trim() || 'project'}.luscent.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    editor().set('dirty', false);
-    editor().toast('Project saved. Media stays in this browser; relink files when opening elsewhere.', 'success');
-  }, []);
+  const save = useCallback(() => void saveProjectToFile(), []);
 
   const handlers = useMemo(
     () => ({
@@ -107,7 +105,10 @@ export function App() {
       setFileOver(false);
       if (!hasFiles(e) || e.defaultPrevented) return;
       e.preventDefault();
-      void editor().importFiles([...e.dataTransfer!.files], { addToComp: editor().project.mediaOrder.length === 0 });
+      const files = [...e.dataTransfer!.files];
+      const proj = files.find((f) => /\.(lsp)$/i.test(f.name));
+      if (proj) void openProjectFile(proj);
+      else void editor().importFiles(files, { addToComp: editor().project.mediaOrder.length === 0 });
     };
     window.addEventListener('dragenter', enter);
     window.addEventListener('dragleave', leave);
@@ -136,11 +137,10 @@ export function App() {
   return (
     <div className="app">
       <TopBar
-        onNew={() => {
-          if (!editor().dirty || window.confirm('Start a new project? Unsaved changes in the current one will be lost.')) editor().newProject();
-        }}
+        onHome={() => void goHome()}
         onOpen={handlers.open}
         onSave={save}
+        onSaveNoMedia={() => void saveProjectToFile({ embedMedia: false })}
         onImport={handlers.importMedia}
         onHelp={handlers.help}
         onPlugins={() => setPlugins(true)}
@@ -169,20 +169,12 @@ export function App() {
       <input
         ref={openRef}
         type="file"
-        accept=".json,application/json"
+        accept={isNativeApp() ? undefined : `${LSP_EXTENSION},.json`}
         style={{ display: 'none' }}
-        onChange={async (e) => {
+        onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = '';
-          if (!f) return;
-          try {
-            const p = deserializeProject(await f.text());
-            editor().loadProject(p);
-            await attachAllMedia(p);
-            editor().toast(`Opened ${p.name}`, 'success');
-          } catch (err) {
-            editor().toast((err as Error).message, 'error');
-          }
+          if (f) void openProjectFile(f);
         }}
       />
       {help && (

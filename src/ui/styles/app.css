@@ -1353,3 +1353,25 @@ button.link {
 .report-section.ok .section-title { color: var(--ok); }
 .report-section.warn .section-title { color: var(--key-sel); }
 .report-section.bad .section-title { color: var(--danger); }
+
+/* ---------------------------------------------------------------- top bar bits */
+button.logo {
+  padding: 0 6px;
+  height: 28px;
+  font-weight: 700;
+  border-radius: 7px;
+}
+.split-btn {
+  display: inline-flex;
+}
+.split-btn > button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split-btn > button.caret {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 0 5px;
+  min-width: 0;
+  font-size: 10px;
+}

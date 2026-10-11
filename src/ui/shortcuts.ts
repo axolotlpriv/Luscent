@@ -36,7 +36,7 @@ export const SHORTCUTS: ShortcutDoc[] = [
   { keys: 'U', label: 'Reveal animated properties' },
   { keys: '= / −', label: 'Zoom timeline in / out' },
   { keys: '\\', label: 'Fit composition in timeline' },
-  { keys: '⌘S / ⌘O', label: 'Save / open project file' },
+  { keys: '⌘S / ⌘O', label: 'Save / open a .lsp project' },
   { keys: '⌘I', label: 'Import media' },
   { keys: '⌘E', label: 'Export video' },
   { keys: 'Esc', label: 'Deselect' },
