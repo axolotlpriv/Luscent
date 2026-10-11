@@ -1,0 +1,4 @@
+# Cloudflare Pages: static build of Luscent (no server code).
+name = "luscent"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-10-01"

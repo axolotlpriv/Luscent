@@ -17,6 +17,17 @@ On first launch Luscent opens a small demo comp (no media needed). Drop video, a
 
 > Codec support is whatever your browser decodes and encodes. Chrome and Edge handle H.264/AAC MP4. Open-source Chromium builds only handle WebM/VP9/Opus; there, MP4 export falls back to VP9 in MP4.
 
+## Deploying to Cloudflare Pages
+
+Luscent is a static site: `npm run build` writes everything to `dist/`. `.github/workflows/deploy-pages.yml` tests, builds and deploys every push to `main` to `luscent.pages.dev`. On its first run it also creates the Pages project.
+
+To turn it on, add two repository secrets under GitHub → Settings → Secrets and variables → Actions:
+
+- `CLOUDFLARE_ACCOUNT_ID`: shown in the Cloudflare dashboard sidebar.
+- `CLOUDFLARE_API_TOKEN`: a token with the **Cloudflare Pages: Edit** permission.
+
+Until both secrets are set, the workflow still builds and tests, then skips the deploy with a warning. You can also deploy by hand with `npx wrangler pages deploy dist --project-name=luscent`.
+
 ## Features
 
 ### Timeline (phase 1)
