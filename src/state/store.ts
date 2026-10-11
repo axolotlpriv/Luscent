@@ -77,6 +77,7 @@ import { compContains, precompose } from '../core/timeline/precompose';
 import { disableTimeRemap, enableTimeRemap, freezeFrame, reverseLayer, setConstantSpeed } from '../core/timeline/timeRemap';
 import { clamp, quantize } from '../core/time';
 import { mediaEngine } from '../engine/media/MediaEngine';
+import { buildProxy } from '../engine/export/proxy';
 import { defaultParamProp, effectRegistry, fxPath, instantiateEffect } from '../core/effects/registry';
 import { pluginParams } from '../core/effects/types';
 import { idb } from '../engine/persist/db';
@@ -123,6 +124,8 @@ export interface EditorState {
   graphType: 'value' | 'speed';
   /** Optical-flow interpolation model. */
   flowEngine: 'farneback' | 'rife';
+  /** Preview plays low-res proxies when they exist. */
+  useProxies: boolean;
   /** Preview resolution factor; 0 = automatic (matches viewer zoom). */
   previewScale: number;
   safeZones: boolean;
@@ -162,6 +165,7 @@ function initialState(project: Project): Omit<EditorState, keyof Actions> {
     graphMode: false,
     graphType: 'value',
     flowEngine: 'farneback',
+    useProxies: true,
     previewScale: 0,
     safeZones: false,
     toasts: [],
@@ -204,6 +208,7 @@ export interface Actions {
   importFiles(files: File[], opts?: { addToComp?: boolean }): Promise<void>;
   setAnalysis(mediaId: Id, analysis: AudioAnalysis): void;
   removeMedia(id: Id): void;
+  buildProxy(id: Id): Promise<void>;
   addMediaToComp(mediaId: Id, at?: number): void;
   addCompToComp(compId: Id, at?: number): void;
   // layers
@@ -506,6 +511,21 @@ export const useEditor = create<Store>()((set, get) => {
           deleteLayers(c as Composition, gone);
         }
       });
+    },
+    async buildProxy(id) {
+      const item = get().project.media[id];
+      if (!item || item.kind !== 'video') return;
+      if (mediaEngine.proxyProgress.has(id)) return;
+      mediaEngine.setProxyProgress(id, 0);
+      try {
+        const blob = await buildProxy(item, mediaEngine, (p) => mediaEngine.setProxyProgress(id, p));
+        mediaEngine.setProxy(id, blob);
+        get().toast(`Proxy ready for ${item.name}`, 'success');
+      } catch (err) {
+        get().toast(`Proxy failed: ${(err as Error).message}`, 'error');
+      } finally {
+        mediaEngine.setProxyProgress(id, null);
+      }
     },
     addMediaToComp(mediaId, at) {
       const s = get();

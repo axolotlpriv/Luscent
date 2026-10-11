@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { frameCache } from '../../engine/cache/FrameCache';
 import { compBeatTimes } from '../../core/timeline/snap';
 import { formatTimecode } from '../../core/time';
 import { activeComp, editor, useEditor } from '../../state/store';
@@ -231,6 +232,7 @@ export function Ruler({ width }: { width: number }) {
           </div>
         );
       })}
+      <CachedBar fps={comp.fps} xOf={xOf} />
       <div className="playhead-head" style={{ left: xOf(playhead) }} />
       <SnapGhost />
       {menu && <ContextMenu {...menu} onClose={() => setMenu(null)} />}
@@ -244,4 +246,20 @@ function SnapGhost() {
   const scrollTime = useEditor((s) => s.scrollTime);
   if (!snap) return null;
   return <div className={'snap-line ' + snap.kind} style={{ left: (snap.time - scrollTime) * pxPerSec }} />;
+}
+
+/** Green bar over frames held in the RAM preview cache. */
+function CachedBar({ fps, xOf }: { fps: number; xOf: (t: number) => number }) {
+  useSyncExternalStore(
+    (fn) => frameCache.subscribe(fn),
+    () => frameCache.count,
+  );
+  if (frameCache.fps !== fps) return null;
+  return (
+    <>
+      {frameCache.ranges().map(([a, b]) => (
+        <div key={a} className="cache-bar" style={{ left: xOf(a / fps), width: Math.max(1, xOf((b + 1) / fps) - xOf(a / fps)) }} />
+      ))}
+    </>
+  );
 }

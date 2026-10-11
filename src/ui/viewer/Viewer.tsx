@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { frameCache } from '../../engine/cache/FrameCache';
+import { cacheWorkArea } from '../../engine/cache/ramPreview';
 import { GLRenderer, type SourceProvider } from '../../engine/gl/Renderer';
 import { VideoPool } from '../../engine/media/VideoPool';
 import { FrameSource } from '../../engine/media/FrameSource';
@@ -44,6 +46,7 @@ export function Viewer() {
   const comp = useEditor(activeComp);
   const previewScale = useEditor((s) => s.previewScale);
   const safeZones = useEditor((s) => s.safeZones);
+  const useProxies = useEditor((s) => s.useProxies);
   const playhead = useEditor((s) => s.playhead);
   const selectedLayers = useEditor((s) => s.selectedLayers);
 
@@ -60,6 +63,14 @@ export function Viewer() {
     const pool = poolRef.current;
     if (!r || !pool) return;
     const s = editor();
+    // RAM preview: show a pre-rendered frame when the cache covers it.
+    const ac = activeComp(s);
+    const fi = Math.round(s.playhead * ac.fps);
+    if (frameCache.count > 0 && frameCache.validate(s.project, s.activeCompId, scaleRef.current, ac.fps) && frameCache.has(fi)) {
+      r.presentBitmap(frameCache.get(fi)!);
+      pool.sync([], s.playing);
+      return;
+    }
     const frame = evaluateComposition(s.project, s.activeCompId, s.playhead, { measureText: (spec) => r.text.measure(spec) });
     if (!frame) return;
     frameRef.current = frame;
@@ -106,7 +117,7 @@ export function Viewer() {
       setError((err as Error).message);
       return;
     }
-    poolRef.current = new VideoPool(mediaEngine, requestDraw);
+    poolRef.current = new VideoPool(mediaEngine, requestDraw, () => editor().useProxies);
     const frames = new FrameSource(mediaEngine);
     interpRef.current = new FrameInterpolator(frames, requestDraw);
     interpRef.current.onError = (msg) => {
@@ -120,7 +131,8 @@ export function Viewer() {
       }
     });
     const unsubStore = useEditor.subscribe((s, p) => {
-      if (s.project !== p.project || s.playhead !== p.playhead || s.activeCompId !== p.activeCompId || s.playing !== p.playing || s.previewScale !== p.previewScale || s.flowEngine !== p.flowEngine) requestDraw();
+      if (s.useProxies !== p.useProxies) poolRef.current?.disposeAll();
+      if (s.project !== p.project || s.playhead !== p.playhead || s.activeCompId !== p.activeCompId || s.playing !== p.playing || s.previewScale !== p.previewScale || s.flowEngine !== p.flowEngine || s.useProxies !== p.useProxies) requestDraw();
     });
     const unsubMedia = mediaEngine.subscribe(requestDraw);
     let lastFx = effectRegistry.version;
@@ -402,6 +414,10 @@ export function Viewer() {
           <option value={0.5}>Half</option>
           <option value={0.25}>Quarter</option>
         </select>
+        <RamPreviewButton scale={effectiveScale} />
+        <button className={'icon' + (useProxies ? ' on' : '')} title="Play proxies (low-res transcodes) when available — create them from a clip's context menu" onClick={() => useEditor.getState().set('useProxies', !useProxies)}>
+          Proxy
+        </button>
         <button className={'icon' + (safeZones ? ' on' : '')} title="Short-form safe zones (TikTok / Reels / Shorts UI)" onClick={() => useEditor.getState().set('safeZones', !safeZones)}>
           ▣
         </button>
@@ -410,6 +426,49 @@ export function Viewer() {
         </span>
       </div>
     </div>
+  );
+}
+
+/** Render the work area to RAM for guaranteed real-time playback. */
+function RamPreviewButton({ scale }: { scale: number }) {
+  const [progress, setProgress] = useState<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const cached = useSyncExternalStore(
+    (fn) => frameCache.subscribe(fn),
+    () => frameCache.count,
+  );
+  const run = async () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      return;
+    }
+    const s = editor();
+    if (s.playing) s.pause();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setProgress(0);
+    try {
+      const n = await cacheWorkArea(s.project, s.activeCompId, scale, mediaEngine, setProgress, ac.signal, s.flowEngine);
+      if (!ac.signal.aborted) editor().toast(`RAM preview: ${n} frames cached — press Space`, 'success');
+    } catch (err) {
+      editor().toast(`RAM preview failed: ${(err as Error).message}`, 'error');
+    } finally {
+      abortRef.current = null;
+      setProgress(null);
+    }
+  };
+  return (
+    <button
+      className={'icon' + (progress !== null ? ' on' : '')}
+      title={progress !== null ? 'Click to stop' : `Render the work area to RAM (${cached} frames cached)`}
+      onClick={run}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        frameCache.clear();
+      }}
+    >
+      {progress !== null ? `RAM ${Math.round(progress * 100)}%` : cached ? `RAM ✓${cached}` : 'RAM'}
+    </button>
   );
 }
 

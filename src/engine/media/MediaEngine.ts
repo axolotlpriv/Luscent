@@ -9,6 +9,7 @@ import type { Peaks } from '../../core/audio/waveform';
 import type { AnalysisRequest, AnalysisResponse } from '../../workers/audioAnalysis.worker';
 import { getAudioContext } from './audioContext';
 import { measureFps } from './FrameSource';
+import { loadStoredProxy } from '../export/proxy';
 
 export type MediaStatus = 'loading' | 'ready' | 'error' | 'missing';
 
@@ -79,6 +80,9 @@ export class MediaEngine {
   private peaks = new Map<Id, Peaks>();
   private status = new Map<Id, MediaStatus>();
   private errors = new Map<Id, string>();
+  private proxies = new Map<Id, string>();
+  /** Proxy build progress 0..1 while transcoding. */
+  readonly proxyProgress = new Map<Id, number>();
   private listeners = new Set<() => void>();
   private analysis = new AnalysisClient();
   version = 0;
@@ -95,6 +99,24 @@ export class MediaEngine {
 
   url(id: Id): string | null {
     return this.urls.get(id) ?? null;
+  }
+  /** URL for preview playback: the proxy when enabled and available. */
+  playbackUrl(id: Id, useProxy: boolean): string | null {
+    return (useProxy ? this.proxies.get(id) : undefined) ?? this.urls.get(id) ?? null;
+  }
+  hasProxy(id: Id): boolean {
+    return this.proxies.has(id);
+  }
+  setProxy(id: Id, blob: Blob): void {
+    const old = this.proxies.get(id);
+    if (old) URL.revokeObjectURL(old);
+    this.proxies.set(id, URL.createObjectURL(blob));
+    this.notify();
+  }
+  setProxyProgress(id: Id, p: number | null): void {
+    if (p === null) this.proxyProgress.delete(id);
+    else this.proxyProgress.set(id, p);
+    this.notify();
   }
   blob(id: Id): Blob | null {
     return this.blobs.get(id) ?? null;
@@ -226,6 +248,10 @@ export class MediaEngine {
         if (buf) this.audio.set(id, buf);
       }
       this.status.set(id, 'ready');
+      if (item.kind === 'video' && !this.proxies.has(id)) {
+        const proxy = await loadStoredProxy(id);
+        if (proxy) this.setProxy(id, proxy);
+      }
       this.notify();
       const buf = this.audio.get(id);
       if (buf && !this.peaks.has(id)) {
@@ -254,6 +280,9 @@ export class MediaEngine {
     this.peaks.delete(id);
     this.status.delete(id);
     this.errors.delete(id);
+    const px = this.proxies.get(id);
+    if (px) URL.revokeObjectURL(px);
+    this.proxies.delete(id);
     this.notify();
   }
 

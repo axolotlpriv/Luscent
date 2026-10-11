@@ -133,6 +133,9 @@ export function ProjectPanel() {
                     y: e.clientY,
                     items: [
                       { label: 'Add to composition', action: () => editor().addMediaToComp(id) },
+                      ...(m.kind === 'video'
+                        ? [{ label: mediaEngine.hasProxy(id) ? 'Rebuild proxy (540p)' : 'Create proxy (540p)', action: () => void editor().buildProxy(id) }]
+                        : []),
                       {
                         label: 'Relink file…',
                         action: () => {
@@ -154,6 +157,12 @@ export function ProjectPanel() {
                   <div className="meta">{fmtDuration(m)}</div>
                 </div>
                 {m.analysis?.bpm ? <span className="badge beat">{Math.round(m.analysis.bpm)}</span> : null}
+                {mediaEngine.proxyProgress.has(id) && <span className="badge">P {Math.round((mediaEngine.proxyProgress.get(id) ?? 0) * 100)}%</span>}
+                {mediaEngine.hasProxy(id) && !mediaEngine.proxyProgress.has(id) && (
+                  <span className="badge" title="Proxy available">
+                    P
+                  </span>
+                )}
                 {status === 'loading' && <span className="badge">…</span>}
                 {status === 'missing' && (
                   <span

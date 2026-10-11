@@ -41,10 +41,12 @@ export class VideoPool {
   constructor(
     private readonly media: MediaEngine,
     private readonly onFrame: () => void,
+    /** Whether preview should play proxies when available. */
+    private readonly useProxies: () => boolean = () => false,
   ) {}
 
   private create(key: string, mediaId: Id): Slot | null {
-    const url = this.media.url(mediaId);
+    const url = this.media.playbackUrl(mediaId, this.useProxies());
     if (!url) return null;
     const el = document.createElement('video');
     el.muted = true;

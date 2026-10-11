@@ -1194,3 +1194,50 @@ textarea.code {
   overflow: auto;
   user-select: text;
 }
+
+/* ---------------------------------------------------------------- export */
+.export-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.export-preset {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  padding: 8px;
+  cursor: pointer;
+}
+.export-preset.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.export-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+.bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.15s;
+}
+
+.cache-bar {
+  position: absolute;
+  top: 0;
+  height: 3px;
+  background: var(--ok);
+  pointer-events: none;
+  z-index: 2;
+}

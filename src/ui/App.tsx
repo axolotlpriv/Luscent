@@ -9,11 +9,13 @@ import { Timeline } from './timeline/Timeline';
 import { TopBar } from './TopBar';
 import { Viewer } from './viewer/Viewer';
 import { PluginManager } from './plugins/PluginManager';
+import { ExportDialog } from './export/ExportDialog';
 
 export function App() {
   const [timelineH, setTimelineH] = useState(() => Math.round(window.innerHeight * 0.4));
   const [help, setHelp] = useState(false);
   const [plugins, setPlugins] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [fileOver, setFileOver] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const openRef = useRef<HTMLInputElement>(null);
@@ -37,6 +39,7 @@ export function App() {
       open: () => openRef.current?.click(),
       importMedia: () => importRef.current?.click(),
       help: () => setHelp((h) => !h),
+      exportVideo: () => setExporting(true),
     }),
     [save],
   );
@@ -111,6 +114,7 @@ export function App() {
         onImport={handlers.importMedia}
         onHelp={handlers.help}
         onPlugins={() => setPlugins(true)}
+        onExport={() => setExporting(true)}
       />
       <div className="workspace" style={{ gridTemplateRows: `1fr 5px ${timelineH}px` }}>
         <div className="upper">
@@ -172,6 +176,7 @@ export function App() {
         </div>
       )}
       {plugins && <PluginManager onClose={() => setPlugins(false)} />}
+      {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       {fileOver && <div className="file-drop-overlay">Drop to import</div>}
       <div className="toasts">
         {toasts.map((t) => (

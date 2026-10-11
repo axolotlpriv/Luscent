@@ -7,9 +7,10 @@ interface Props {
   onImport: () => void;
   onHelp: () => void;
   onPlugins: () => void;
+  onExport: () => void;
 }
 
-export function TopBar({ onNew, onOpen, onSave, onImport, onHelp, onPlugins }: Props) {
+export function TopBar({ onNew, onOpen, onSave, onImport, onHelp, onPlugins, onExport }: Props) {
   const name = useEditor((s) => s.project.name);
   const canUndo = useEditor((s) => s.canUndo);
   const canRedo = useEditor((s) => s.canRedo);
@@ -61,7 +62,7 @@ export function TopBar({ onNew, onOpen, onSave, onImport, onHelp, onPlugins }: P
       <button className="ghost" onClick={onHelp} title="Keyboard shortcuts (?)">
         ⌨ Shortcuts
       </button>
-      <button className="primary" disabled title="H.264 / WebM / GIF export lands in phase 4">
+      <button className="primary" onClick={onExport} title="Export MP4 / WebM / GIF (⌘E)">
         Export
       </button>
     </div>

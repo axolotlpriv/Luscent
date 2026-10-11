@@ -38,6 +38,7 @@ export const SHORTCUTS: ShortcutDoc[] = [
   { keys: '\\', label: 'Fit composition in timeline' },
   { keys: '⌘S / ⌘O', label: 'Save / open project file' },
   { keys: '⌘I', label: 'Import media' },
+  { keys: '⌘E', label: 'Export video' },
   { keys: 'Esc', label: 'Deselect' },
   { keys: '?', label: 'This list' },
 ];
@@ -56,6 +57,7 @@ export interface ShortcutHandlers {
   open: () => void;
   importMedia: () => void;
   help: () => void;
+  exportVideo: () => void;
 }
 
 function isTyping(e: KeyboardEvent): boolean {
@@ -94,6 +96,7 @@ export function useShortcuts(h: ShortcutHandlers): void {
         if (k === 's') return handled(), h.save();
         if (k === 'o') return handled(), h.open();
         if (k === 'i') return handled(), h.importMedia();
+        if (k === 'e') return handled(), h.exportVideo();
         if (k === 'h' && e.altKey) return handled(), s.setSelectedKeysInterpolation('hold');
         if ((e.key === 'Backspace' || e.key === 'Delete') && e.shiftKey) return handled(), s.extractWorkArea();
         if (e.key === 'F9' && e.shiftKey) return handled(), s.easeSelectedKeys('out');

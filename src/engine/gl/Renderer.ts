@@ -182,6 +182,23 @@ export class GLRenderer {
     this.stats.ms = performance.now() - t0;
   }
 
+  /** Show a pre-rendered frame (RAM preview) instead of compositing. */
+  presentBitmap(bmp: ImageBitmap): void {
+    if (this.lost) return;
+    const gl = this.gl;
+    if (this.canvas.width !== bmp.width || this.canvas.height !== bmp.height) {
+      this.canvas.width = bmp.width;
+      this.canvas.height = bmp.height;
+    }
+    this.bridgeTex ??= this.newTexture();
+    this.upload(this.bridgeTex, bmp);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, bmp.width, bmp.height);
+    gl.disable(gl.BLEND);
+    // Bitmaps are top-row-first like offscreen targets: flip for the canvas.
+    this.fullscreen(this.copyProg, { uTex: this.bridgeTex }, { uOpacity: 1, uFlipY: 1 });
+  }
+
   // ------------------------------------------------------------------ compositing
 
   /** Composite a frame into a fresh target (caller releases it). */

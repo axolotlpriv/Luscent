@@ -13,10 +13,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "gifenc": "^1.0.3",
     "gl-transitions": "^1.74.0",
     "immer": "^11.1.21",
+    "mp4-muxer": "^5.2.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "webm-muxer": "^5.1.4",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
