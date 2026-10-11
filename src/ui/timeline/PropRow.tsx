@@ -1,3 +1,4 @@
+import { longPress } from './longPress';
 import { memo } from 'react';
 import { moveKeyframes } from '../../core/animation/keyframes';
 import type { PropDef } from '../../core/model/properties';
@@ -95,6 +96,18 @@ export const PropRow = memo(function PropRow({ layer, def, pxPerSec, scrollTime,
     });
   };
 
+  const pressHandlers = (keyId: string, onDown: (e: React.PointerEvent) => void) => {
+    const lp = longPress((x, y) => openKeyMenu(x, y, keyId));
+    return { onPointerDown: (e: React.PointerEvent) => (lp.onPointerDown(e), onDown(e)) };
+  };
+
+  const openKeyMenu = (x: number, y: number, keyId: string) => {
+    const id = keySelId({ layerId: layer.id, path: def.path, keyId });
+    const s = editor();
+    if (!s.selectedKeys[id]) s.selectKeys([{ layerId: layer.id, path: def.path, keyId }]);
+    onMenu(x, y, keyMenu());
+  };
+
   return (
     <div className="tl-row prop">
       <div className="tl-cell-left" style={{ width: leftWidth }}>
@@ -102,8 +115,12 @@ export const PropRow = memo(function PropRow({ layer, def, pxPerSec, scrollTime,
         <span className="label" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {def.label}
         </span>
-        <PropValue layer={layer} def={def} />
-        <KeyNav layer={layer} def={def} />
+        <span className="pv">
+          <PropValue layer={layer} def={def} />
+        </span>
+        <span className="pv">
+          <KeyNav layer={layer} def={def} />
+        </span>
       </div>
       <div className="tl-cell-track" data-track>
         {prop?.keyframes.map((k) => {
@@ -117,7 +134,6 @@ export const PropRow = memo(function PropRow({ layer, def, pxPerSec, scrollTime,
               style={{ left: x }}
               data-key={id}
               title={`${def.label} keyframe · ${k.inInterp}/${k.outInterp} (double-click to jump, right-click for easing)`}
-              onPointerDown={(e) => onKeyDown(e, k)}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 editor().setPlayhead(layer.startTime + k.time);
@@ -125,10 +141,9 @@ export const PropRow = memo(function PropRow({ layer, def, pxPerSec, scrollTime,
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const s = editor();
-                if (!s.selectedKeys[id]) s.selectKeys([{ layerId: layer.id, path: def.path, keyId: k.id }]);
-                onMenu(e.clientX, e.clientY, keyMenu());
+                openKeyMenu(e.clientX, e.clientY, k.id);
               }}
+              {...pressHandlers(k.id, (e) => onKeyDown(e, k))}
             />
           );
         })}

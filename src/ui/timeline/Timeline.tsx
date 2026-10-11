@@ -10,7 +10,7 @@ import { LayerRow } from './LayerRow';
 import { PropRow } from './PropRow';
 import { Ruler, tickStep } from './Ruler';
 import { makeSnapper, startDrag } from './drag';
-import { LAYER_H, LEFT_W, PROP_H, useTimelineUI } from './uiState';
+import { dims, useTimelineUI } from './uiState';
 import { GraphEditor } from '../graph/GraphEditor';
 import { useEffectRegistry } from '../panels/EffectStack';
 
@@ -63,13 +63,13 @@ export function Timeline() {
     return m;
   }, [selectedKeys]);
 
-  const rowsHeight = rows.reduce((h, r) => h + (r.kind === 'layer' ? LAYER_H : PROP_H), 0);
+  const rowsHeight = rows.reduce((h, r) => h + (r.kind === 'layer' ? dims.layerH : dims.propH), 0);
 
   // ---------------------------------------------------------------- sizing
   useLayoutEffect(() => {
     const el = scrollRef.current!;
     const ro = new ResizeObserver(() => {
-      useTimelineUI.setState({ trackWidth: Math.max(50, el.clientWidth - LEFT_W) });
+      useTimelineUI.setState({ trackWidth: Math.max(50, el.clientWidth - dims.leftW) });
       setViewportH(el.clientHeight);
     });
     ro.observe(el);
@@ -81,7 +81,7 @@ export function Timeline() {
     const el = scrollRef.current!;
     const onWheel = (e: WheelEvent) => {
       const rect = el.getBoundingClientRect();
-      const px = e.clientX - rect.left - LEFT_W;
+      const px = e.clientX - rect.left - dims.leftW;
       const s = editor();
       if (e.ctrlKey || e.metaKey || e.altKey) {
         e.preventDefault();
@@ -95,6 +95,77 @@ export function Timeline() {
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // ---------------------------------------------------------------- touch: pan, pinch-zoom, tap to deselect
+  useEffect(() => {
+    const el = scrollRef.current!;
+    const pts = new Map<number, { x: number; y: number }>();
+    let pan: { x0: number; scroll0: number; moved: boolean } | null = null;
+    let pinch: { d0: number; zoom0: number; anchorT: number } | null = null;
+    const pair = () => {
+      const [a, b] = [...pts.values()];
+      return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: (a.x + b.x) / 2 };
+    };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      // A primary pointer starts a fresh gesture: drop anything left from a gesture the browser cancelled.
+      if (e.isPrimary) {
+        pts.clear();
+        pan = null;
+        pinch = null;
+      }
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const s = editor();
+      if (pts.size === 2) {
+        const { d, mid } = pair();
+        const px = mid - el.getBoundingClientRect().left - dims.leftW;
+        pinch = { d0: d, zoom0: s.pxPerSec, anchorT: s.scrollTime + Math.max(0, px) / s.pxPerSec };
+        pan = null;
+      } else if (pts.size === 1 && !(e.target as HTMLElement).closest('.bar,.kf,.tl-cell-left')) {
+        pan = { x0: e.clientX, scroll0: s.scrollTime, moved: false };
+      }
+    };
+    const move = (e: PointerEvent) => {
+      const p = pts.get(e.pointerId);
+      if (!p) return;
+      p.x = e.clientX;
+      p.y = e.clientY;
+      const s = editor();
+      if (pinch && pts.size >= 2) {
+        const { d, mid } = pair();
+        const px = mid - el.getBoundingClientRect().left - dims.leftW;
+        s.setZoom(pinch.zoom0 * (d / pinch.d0), pinch.anchorT, Math.max(0, px));
+      } else if (pan) {
+        const dx = e.clientX - pan.x0;
+        if (!pan.moved && Math.abs(dx) < 6) return;
+        pan.moved = true;
+        s.setScrollTime(pan.scroll0 - dx / s.pxPerSec);
+      }
+    };
+    const end = (e: PointerEvent) => {
+      if (!pts.delete(e.pointerId)) return;
+      if (pts.size < 2) pinch = null;
+      if (pts.size === 0) {
+        // A tap on empty track space deselects (a cancelled gesture was a scroll).
+        if (pan && !pan.moved && e.type === 'pointerup') {
+          const s = editor();
+          s.selectKeys([]);
+          s.selectLayer(null);
+        }
+        pan = null;
+      }
+    };
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    return () => {
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', end);
+      el.removeEventListener('pointercancel', end);
+    };
   }, []);
 
   // Follow the playhead while playing (page flip like AE).
@@ -111,7 +182,7 @@ export function Timeline() {
 
   // ---------------------------------------------------------------- marquee & background clicks
   const onRowsDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || e.pointerType === 'touch') return; // touch pans and pinches instead (below)
     const target = e.target as HTMLElement;
     if (!target.closest('.tl-cell-track') || target.closest('.bar,.kf')) return;
     const host = rowsRef.current!;
@@ -166,7 +237,7 @@ export function Timeline() {
     e.stopPropagation();
     const rect = scrollRef.current!.getBoundingClientRect();
     const s = editor();
-    const raw = s.scrollTime + Math.max(0, e.clientX - rect.left - LEFT_W) / s.pxPerSec;
+    const raw = s.scrollTime + Math.max(0, e.clientX - rect.left - dims.leftW) / s.pxPerSec;
     const t = makeSnapper().time(raw);
     useTimelineUI.setState({ snap: null });
     const mediaId = e.dataTransfer.getData('application/x-luscent-media');
@@ -200,7 +271,7 @@ export function Timeline() {
     let y = 0;
     for (const r of rows) {
       if (r.kind === 'layer' && r.index === dropIndex) break;
-      y += r.kind === 'layer' ? LAYER_H : PROP_H;
+      y += r.kind === 'layer' ? dims.layerH : dims.propH;
     }
     dropY = y;
   }
@@ -210,7 +281,7 @@ export function Timeline() {
       <TimelineToolbar fitAll={fitAll} compStack={compStack} names={compStack.map((id) => project.compositions[id]?.name ?? '?')} />
       <div className="tl-main">
         <div className="tl-head-row">
-          <div className="tl-left-head" style={{ width: LEFT_W }}>
+          <div className="tl-left-head" style={{ width: dims.leftW }}>
             <span style={{ flex: 1 }}>
               {comp.layers.length} layer{comp.layers.length === 1 ? '' : 's'}
             </span>
@@ -233,7 +304,7 @@ export function Timeline() {
                   scrollTime={scrollTime}
                   trackWidth={trackWidth}
                   media={'mediaId' in r.layer ? (project.media[r.layer.mediaId] ?? null) : null}
-                  leftWidth={LEFT_W}
+                  leftWidth={dims.leftW}
                   onMenu={onMenu}
                 />
               ) : (
@@ -244,7 +315,7 @@ export function Timeline() {
                   pxPerSec={pxPerSec}
                   scrollTime={scrollTime}
                   trackWidth={trackWidth}
-                  leftWidth={LEFT_W}
+                  leftWidth={dims.leftW}
                   selectedIds={(keysByProp.get(r.layer.id + '|' + r.def.path) ?? []).join(',')}
                   onMenu={onMenu}
                 />
@@ -256,7 +327,7 @@ export function Timeline() {
           </div>
         </div>
         {graphMode && (
-          <div className="graph-overlay" style={{ left: LEFT_W, top: 30 }}>
+          <div className="graph-overlay" style={{ left: dims.leftW, top: 30 }}>
             <GraphEditor />
           </div>
         )}
@@ -280,7 +351,7 @@ function PlayheadOverlay() {
   const snap = useTimelineUI((s) => s.snap);
   const x = (playhead - scrollTime) * pxPerSec;
   return (
-    <div className="tl-overlay" style={{ left: LEFT_W, top: 30 }}>
+    <div className="tl-overlay" style={{ left: dims.leftW, top: 30 }}>
       {x >= 0 && <div className="playhead-line" style={{ left: x }} />}
       {snap && <div className={'snap-line ' + snap.kind} style={{ left: (snap.time - scrollTime) * pxPerSec }} />}
     </div>
@@ -335,7 +406,7 @@ function GridCanvas({ width, height }: { width: number; height: number }) {
       });
     }
   }, [width, h, pxPerSec, scrollTime, comp.workArea.start, comp.workArea.end, comp.duration, comp.fps, beats, beatSnap]);
-  return <canvas ref={ref} className="grid-canvas" style={{ left: LEFT_W }} />;
+  return <canvas ref={ref} className="grid-canvas" style={{ left: dims.leftW }} />;
 }
 
 function TimelineToolbar({ fitAll, compStack, names }: { fitAll: () => void; compStack: string[]; names: string[] }) {

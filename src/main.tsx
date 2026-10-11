@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import './ui/styles/app.css';
 import { App } from './ui/App';
 import { installTransport } from './engine/playback/Transport';
 import { installAutosave } from './engine/persist/autosave';
@@ -10,8 +11,9 @@ import { effectRegistry } from './core/effects/registry';
 import { GpuFarneback } from './engine/flow/gpuFarneback';
 import { farnebackFlow } from './core/flow/farneback';
 import { getGpuDevice } from './engine/gpu/device';
+import { isNativeApp } from './engine/platform/files';
+import { openProjectFile } from './state/projectActions';
 import { usePresetLibrary } from './state/presetLibrary';
-import './ui/styles/app.css';
 
 registerBuiltinEffects();
 installTransport();
@@ -37,3 +39,15 @@ async function boot() {
 }
 
 void boot();
+
+// Installed desktop PWA: double-clicking a .lsp file opens it here.
+type LaunchQueue = { setConsumer(fn: (p: { files: Array<{ getFile(): Promise<File> }> }) => void): void };
+(window as unknown as { launchQueue?: LaunchQueue }).launchQueue?.setConsumer(async (params) => {
+  const file = await params.files[0]?.getFile();
+  if (file) void openProjectFile(file);
+});
+
+// Installable + offline after the first visit. Not needed (and not wanted) inside the Android app.
+if ('serviceWorker' in navigator && import.meta.env.PROD && !isNativeApp()) {
+  window.addEventListener('load', () => void navigator.serviceWorker.register('./sw.js').catch(() => undefined));
+}

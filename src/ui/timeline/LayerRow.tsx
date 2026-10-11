@@ -4,7 +4,8 @@ import type { Composition, Layer, MediaItem } from '../../core/model/types';
 import { moveLayers, slipLayer, trimLayer, type Edge, makeEditContext } from '../../core/timeline/ops';
 import { activeComp, editor } from '../../state/store';
 import { makeSnapper, startDrag } from './drag';
-import { LAYER_H, useTimelineUI } from './uiState';
+import { longPress } from './longPress';
+import { dims, useTimelineUI } from './uiState';
 import { Waveform } from './Waveform';
 import type { MenuItem } from '../components/fields';
 
@@ -158,6 +159,13 @@ export const LayerRow = memo(function LayerRow(p: Props) {
       { label: 'Pre-compose', hint: '⌘⇧C', action: () => editor().precomposeSelected() },
       ...(layer.type === 'precomp' ? [{ label: 'Open composition', action: () => editor().openComp(layer.compId, { fromLayer: layer.id }) }] : []),
       { separator: true, label: '' },
+      { label: layer.visible ? 'Hide' : 'Show', action: () => toggle('visible') },
+      ...(hasAudio || layer.type === 'precomp' ? [{ label: layer.audible ? 'Mute' : 'Unmute', action: () => toggle('audible') }] : []),
+      { label: layer.solo ? 'Unsolo' : 'Solo', action: () => toggle('solo') },
+      { label: layer.locked ? 'Unlock' : 'Lock', action: () => toggle('locked') },
+      { label: 'Move up', action: () => editor().reorderLayers([layer.id], Math.max(0, p.index - 1)) },
+      { label: 'Move down', action: () => editor().reorderLayers([layer.id], p.index + 2) },
+      { separator: true, label: '' },
       { label: 'Delete', hint: '⌫', action: () => editor().deleteSelected(false) },
       { label: 'Ripple delete', hint: '⇧⌫', action: () => editor().deleteSelected(true) },
     ];
@@ -173,7 +181,12 @@ export const LayerRow = memo(function LayerRow(p: Props) {
   const toggle = (key: 'visible' | 'audible' | 'solo' | 'locked') => editor().updateLayer(layer.id, { [key]: !layer[key] } as Partial<Layer>);
 
   return (
-    <div className={'tl-row layer' + (p.selected ? ' selected' : '')} data-layer-index={p.index} onContextMenu={onContext}>
+    <div
+      className={'tl-row layer' + (p.selected ? ' selected' : '')}
+      data-layer-index={p.index}
+      onContextMenu={onContext}
+      {...longPress((x, y) => onContext({ clientX: x, clientY: y, preventDefault() {}, stopPropagation() {} } as React.MouseEvent))}
+    >
       <div className="tl-cell-left" style={{ width: p.leftWidth }} onPointerDown={onLeftDown} onDoubleClick={() => layer.type === 'precomp' && editor().openComp(layer.compId, { fromLayer: layer.id })}>
         <span className={'twirl' + (p.expanded ? ' open' : '')} onClick={() => editor().toggleExpanded(layer.id)}>
           ▸
@@ -205,7 +218,7 @@ export const LayerRow = memo(function LayerRow(p: Props) {
           )}
         </span>
         {layer.type !== 'audio' ? (
-          <span className={'switch' + (layer.visible ? ' on' : '')} title="Video (eye)" onClick={() => toggle('visible')}>
+          <span className={'switch eye' + (layer.visible ? ' on' : '')} title="Video (eye)" onClick={() => toggle('visible')}>
             {layer.visible ? '◉' : '○'}
           </span>
         ) : (
@@ -248,7 +261,7 @@ export const LayerRow = memo(function LayerRow(p: Props) {
               mediaId={p.media.id}
               sourceStart={layer.inPoint - layer.startTime}
               width={barW}
-              height={LAYER_H - 8}
+              height={dims.layerH - 8}
               pxPerSec={pxPerSec}
               visibleFrom={-barL}
               visibleTo={trackWidth - barL}

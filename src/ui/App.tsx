@@ -5,6 +5,8 @@ import { useApp } from '../state/app';
 import { goHome, openProjectFile, saveProjectToFile } from '../state/projectActions';
 import { editor, useEditor } from '../state/store';
 import { Home } from './home/Home';
+import { MobileEditor } from './mobile/MobileEditor';
+import { useLayout } from './timeline/uiState';
 import { Inspector } from './panels/Inspector';
 import { ProjectPanel } from './panels/ProjectPanel';
 import { SHORTCUTS, useShortcuts } from './shortcuts';
@@ -108,7 +110,10 @@ function EditorScreen() {
       const files = [...e.dataTransfer!.files];
       const proj = files.find((f) => /\.(lsp)$/i.test(f.name));
       if (proj) void openProjectFile(proj);
-      else void editor().importFiles(files, { addToComp: editor().project.mediaOrder.length === 0 });
+      else
+        void editor().importFiles(files, {
+          addToComp: editor().project.mediaOrder.length === 0,
+        });
     };
     window.addEventListener('dragenter', enter);
     window.addEventListener('dragleave', leave);
@@ -134,27 +139,44 @@ function EditorScreen() {
     window.addEventListener('pointerup', up);
   };
 
+  const compact = useLayout((s) => s.compact);
+  const actions = {
+    onHome: () => void goHome(),
+    onOpen: handlers.open,
+    onSave: save,
+    onSaveNoMedia: () => void saveProjectToFile({ embedMedia: false }),
+    onImport: handlers.importMedia,
+    onPlugins: () => setPlugins(true),
+    onExport: () => setExporting(true),
+  };
+
   return (
-    <div className="app">
-      <TopBar
-        onHome={() => void goHome()}
-        onOpen={handlers.open}
-        onSave={save}
-        onSaveNoMedia={() => void saveProjectToFile({ embedMedia: false })}
-        onImport={handlers.importMedia}
-        onHelp={handlers.help}
-        onPlugins={() => setPlugins(true)}
-        onExport={() => setExporting(true)}
-      />
-      <div className="workspace" style={{ gridTemplateRows: `1fr 5px ${timelineH}px` }}>
-        <div className="upper">
-          <LeftPanel />
-          <Viewer />
-          <Inspector />
+    <>
+      {compact ? (
+        <MobileEditor key="compact" {...actions} />
+      ) : (
+        <div className="app">
+          <TopBar
+            onHome={() => void goHome()}
+            onOpen={handlers.open}
+            onSave={save}
+            onSaveNoMedia={() => void saveProjectToFile({ embedMedia: false })}
+            onImport={handlers.importMedia}
+            onHelp={handlers.help}
+            onPlugins={() => setPlugins(true)}
+            onExport={() => setExporting(true)}
+          />
+          <div className="workspace" style={{ gridTemplateRows: `1fr 5px ${timelineH}px` }}>
+            <div className="upper">
+              <LeftPanel />
+              <Viewer />
+              <Inspector />
+            </div>
+            <div className="splitter" onPointerDown={onSplitter} />
+            <Timeline />
+          </div>
         </div>
-        <div className="splitter" onPointerDown={onSplitter} />
-        <Timeline />
-      </div>
+      )}
       <input
         ref={importRef}
         type="file"
@@ -190,9 +212,8 @@ function EditorScreen() {
               ))}
             </div>
             <p className="hint" style={{ marginTop: 12 }}>
-              Dragging: hold <kbd>⌘/Ctrl</kbd> to invert snapping, <kbd>Alt</kbd> on a clip edge to ripple-trim, <kbd>Alt</kbd>-drag a clip body to slip
-              its source, <kbd>⇧</kbd> to toggle selection. Number fields: drag to scrub (<kbd>⇧</kbd> ×10, <kbd>Alt</kbd> ×0.1), click to type (math
-              allowed).
+              Dragging: hold <kbd>⌘/Ctrl</kbd> to invert snapping, <kbd>Alt</kbd> on a clip edge to ripple-trim, <kbd>Alt</kbd>-drag a clip body to slip its
+              source, <kbd>⇧</kbd> to toggle selection. Number fields: drag to scrub (<kbd>⇧</kbd> ×10, <kbd>Alt</kbd> ×0.1), click to type (math allowed).
             </p>
           </div>
         </div>
@@ -207,6 +228,6 @@ function EditorScreen() {
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }

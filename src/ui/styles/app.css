@@ -607,10 +607,10 @@ kbd {
   z-index: 1;
 }
 .tl-row.layer {
-  height: 28px;
+  height: var(--layer-h, 28px);
 }
 .tl-row.prop {
-  height: 24px;
+  height: var(--prop-h, 24px);
   background: rgba(0, 0, 0, 0.18);
 }
 .tl-row.selected .tl-cell-left {
