@@ -13,9 +13,15 @@ npm test           # unit tests (vitest)
 npm run build      # typecheck + production build
 ```
 
-On first launch Luscent opens a small demo comp (no media needed). Drop video, audio or images anywhere on the window to import them. The session (project and media files) is autosaved to IndexedDB, so a reload brings everything back. **Save** writes a `.luscent.json` project file.
+Luscent opens on a home page: pick a format (9:16 is the default), open a project, or drop a video to start from it. New projects are empty. Drop video, audio or images anywhere in the editor to import them.
+
+Projects are autosaved in the browser (IndexedDB) and listed under **Recent projects**. **Save** writes a `.lsp` file, the Luscent project file, with the media embedded so it opens anywhere. *Save without media* writes a small file and asks you to relink the clips. Older `.luscent.json` files still open. The format is documented in [docs/PROJECT_FORMAT.md](docs/PROJECT_FORMAT.md).
 
 > Codec support is whatever your browser decodes and encodes. Chrome and Edge handle H.264/AAC MP4. Open-source Chromium builds only handle WebM/VP9/Opus; there, MP4 export falls back to VP9 in MP4.
+
+## Phone and tablet
+
+Below 820 px wide (or on a phone held sideways) the editor switches to a touch layout: preview on top, timeline below, a bottom bar for **Add**, **Presets** and **Edit** sheets, and quick actions for the selected layer. On the timeline, drag with one finger to pan, pinch to zoom, drag a clip or its edges to move and trim, and long-press a layer or keyframe for its menu. Luscent is also an installable PWA (it works offline after the first visit) and there is an Android app, see [docs/ANDROID.md](docs/ANDROID.md).
 
 ## Deploying
 

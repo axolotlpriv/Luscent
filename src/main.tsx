@@ -12,7 +12,8 @@ import { GpuFarneback } from './engine/flow/gpuFarneback';
 import { farnebackFlow } from './core/flow/farneback';
 import { getGpuDevice } from './engine/gpu/device';
 import { isNativeApp } from './engine/platform/files';
-import { openProjectFile } from './state/projectActions';
+import { useApp } from './state/app';
+import { goHome, openProjectFile } from './state/projectActions';
 import { usePresetLibrary } from './state/presetLibrary';
 
 registerBuiltinEffects();
@@ -39,6 +40,27 @@ async function boot() {
 }
 
 void boot();
+
+// Android app: system bars, hardware back button.
+if (isNativeApp()) {
+  void import('./engine/platform/native').then(({ initNative }) =>
+    initNative({
+      back: () => {
+        // Close what's open first: a dialog, then a bottom sheet, then the editor itself.
+        const close = document.querySelector<HTMLElement>('.modal-bg, .m-sheet-head button');
+        if (close) {
+          close.click();
+          return 'handled';
+        }
+        if (useApp.getState().screen === 'editor') {
+          void goHome();
+          return 'handled';
+        }
+        return 'exit';
+      },
+    }),
+  );
+}
 
 // Installed desktop PWA: double-clicking a .lsp file opens it here.
 type LaunchQueue = { setConsumer(fn: (p: { files: Array<{ getFile(): Promise<File> }> }) => void): void };

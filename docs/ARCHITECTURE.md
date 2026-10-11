@@ -168,6 +168,21 @@ UI-only state is part of the store but not of undo:
 
 IndexedDB holds five stores: `projects`, `media`, `library` (curves), `plugins` and `presets`.
 
-- **Autosave**: shortly after each change (debounced), the project JSON and the imported media blobs are written to IndexedDB. Reloading restores the session.
-- **Project file**: `serializeProject` writes `{ format, version, project }`. Non-finite numbers are tagged, since stills have infinite duration. `deserializeProject` is where future migrations hook in.
+- **Projects** are one record each (`p:<projectId>`): the project JSON, a summary (name, size, fps, duration), a small JPEG thumbnail and the modified time. They feed the home page's recent list. A project is written 0.8 s after it changes, but only once it has changed: opening or creating a project doesn't touch the list. Thumbnails are rendered with `OfflineRenderer` at most every 20 s and when leaving the editor.
+- **Media** blobs are stored once by media id and shared by every project that references them. Blobs no project references are deleted after each save.
+- **Project files** are `.lsp` containers (`src/core/model/lsp.ts`, described in [PROJECT_FORMAT.md](PROJECT_FORMAT.md)): the project JSON plus optional embedded media. Saving never loads the media into memory; opening slices it out lazily into the media store.
 - **Missing media** can be relinked from the media list.
+- `src/state/projectActions.ts` is the one place that creates, opens, saves and closes projects. The older single autosave slot is migrated into the project list on first launch.
+
+## Screens and layout (`src/ui`)
+
+`useApp.screen` switches between the **home page** and the **editor**. The editor has two layouts of the same components, chosen by `useLayout.compact` (a media query: narrow, or a coarse-pointer phone held sideways):
+
+- **Desktop**: top bar, three-column workspace, timeline.
+- **Compact**: `ui/mobile/MobileEditor.tsx` stacks the preview and the timeline, with a bottom navigation bar and sheets that host the Project, Presets and Inspector panels.
+
+The timeline's pixel metrics (name column, row heights) live in `dims`, which the layout switch updates together with matching CSS variables, so drag math and rendering agree. Touch handling in the timeline uses pointer events: one finger pans empty track space, two fingers pinch-zoom, a long-press opens the context menu (`timeline/longPress.ts`), and clips and keyframes set `touch-action: none` so they can be dragged.
+
+## Platforms (`src/engine/platform`)
+
+`saveFile` hides the difference between a browser download and the Android app (Capacitor), where files are written in chunks and shared through the system share sheet. See [ANDROID.md](ANDROID.md).
