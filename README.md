@@ -17,7 +17,15 @@ On first launch Luscent opens a small demo comp (no media needed). Drop video, a
 
 > Codec support is whatever your browser decodes and encodes. Chrome and Edge handle H.264/AAC MP4. Open-source Chromium builds only handle WebM/VP9/Opus; there, MP4 export falls back to VP9 in MP4.
 
-## Deploying to Cloudflare Pages
+## Deploying
+
+The build uses relative URLs, so the same `dist/` works at a domain root and under a sub-path.
+
+### GitHub Pages
+
+`.github/workflows/deploy-gh-pages.yml` tests, builds and publishes every push to `main` to `https://<owner>.github.io/<repo>/`. Enable it once under GitHub → Settings → Pages → **Source: GitHub Actions**, then re-run the workflow.
+
+### Cloudflare Pages
 
 Luscent is a static site: `npm run build` writes everything to `dist/`. `.github/workflows/deploy-pages.yml` tests, builds and deploys every push to `main` to `luscent.pages.dev`. On its first run it also creates the Pages project.
 
